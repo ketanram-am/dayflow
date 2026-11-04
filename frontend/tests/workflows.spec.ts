@@ -95,7 +95,7 @@ test("signed policy → employee confirmation → independent approval → durab
   await expect(page.getByText("verified correction committed", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Eval scorecard", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Trust is a measured behavior." })).toBeVisible();
-  await expect(page.getByText("155", { exact: true })).toBeVisible();
+  await expect(page.getByText("168", { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
