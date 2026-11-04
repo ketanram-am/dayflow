@@ -35,9 +35,11 @@ test("signed policy → employee confirmation → independent approval → durab
   await expect(page.getByText("This exact ruleset is active.", { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "Exception desk", exact: true }).click();
   await maya(page);
-  await page.getByRole("button", { name: "AI investigation", exact: true }).click();
-  await page.getByRole("button", { name: "Run investigation", exact: true }).click();
-  await expect(page.getByText("Critic: instruction override flagged", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "AI summary", exact: true }).click();
+  await page.getByRole("button", { name: "Explain this timecard", exact: true }).click();
+  await expect(page.getByText("Needs a person", { exact: true })).toBeVisible();
+  await expect(page.getByText("The AI was skipped", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Review this suggestion" })).toBeVisible();
   await page.getByRole("button", { name: "Correction & proof", exact: true }).click();
   await page.getByRole("button", { name: "Draft correction", exact: true }).click();
   const dialog = page.getByRole("dialog");
@@ -133,19 +135,16 @@ test("benign offline investigation stays useful without a model", async ({ page 
   await login(page);
   await page.getByLabel("Search workforce").fill("Jordan Ellis");
   await page.getByRole("button", { name: "Open Jordan Ellis 2026-10-05" }).click();
-  await page.getByRole("button", { name: "AI investigation", exact: true }).click();
-  await page.getByRole("button", { name: "Run investigation", exact: true }).click();
-  await expect(page.getByText("Critic: no override detected", { exact: true })).toBeVisible();
-  await expect(page.getByText("No-LLM fallback", { exact: true })).toBeVisible();
-  await expect(page.locator(".investigation-result")).toContainText("Deterministic");
+  await page.getByRole("button", { name: "AI summary", exact: true }).click();
+  await page.getByRole("button", { name: "Explain this timecard", exact: true }).click();
+  await expect(page.getByText("Rules-based summary (AI is off)", { exact: true })).toBeVisible();
+  await expect(page.getByText("What the rules engine found")).toBeVisible();
 });
 
 test("AI wow layer degrades safely: injection lab, unsafe fix, paycheck explainer, AI draft", async ({ page }) => {
   await login(page);
   await maya(page);
-  await page.getByRole("button", { name: "AI investigation", exact: true }).click();
-  await page.getByRole("button", { name: "Run note through critics" }).click();
-  await expect(page.getByText("Blocked", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "AI summary", exact: true }).click();
   await page.getByRole("button", { name: "Pay derivation", exact: true }).click();
   await page.getByLabel("Your question").fill("Why is my total this amount?");
   await page.getByRole("button", { name: "Explain", exact: true }).click();
@@ -154,6 +153,11 @@ test("AI wow layer degrades safely: injection lab, unsafe fix, paycheck explaine
   await page.getByRole("button", { name: "Propose an unsafe fix" }).click();
   await expect(page.getByText("Rejected by the verifier", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Policy studio", exact: true }).click();
+  await page.getByLabel("What-if question").fill("What if overtime started after 7 hours?");
+  await page.getByRole("button", { name: "Show the cost" }).click();
+  await expect(page.getByText("Understood by rule parser")).toBeVisible();
+  await expect(page.getByText("Timecards affected")).toBeVisible();
+  await page.getByText("Advanced: import rules from policy text", { exact: false }).click();
   await page.getByRole("button", { name: "Extract rules from policy text" }).click();
   await expect(page.getByText("AI is off: baseline shown", { exact: false })).toBeVisible();
 });

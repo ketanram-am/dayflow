@@ -28,6 +28,20 @@ def reviewer(user):
         fail("An authorized reviewer is required", 403)
 
 
+LEGACY_STATUS = {"offline": "rules_only", "investigated": "ai_summary", "manual_review": "needs_person"}
+
+
+def upgrade_investigation(result):
+    """Stored investigations are immutable; give older shapes the fields the UI expects."""
+    result = dict(result)
+    result["status"] = LEGACY_STATUS.get(result.get("status"), result.get("status"))
+    result.setdefault("findings", [])
+    result.setdefault("note_assessment", "no_note")
+    result.setdefault("note_reason", "")
+    result.setdefault("model", None)
+    return result
+
+
 @lru_cache(maxsize=512)
 def cached_pay(payload, policy):
     document = PolicyDocument.model_validate_json(policy)
@@ -88,7 +102,7 @@ class Service:
     def llm_enabled(self):
         with self.db.connect() as cx:
             row = cx.execute("SELECT value FROM meta WHERE key='llm_enabled'").fetchone()
-        return not row or row["value"] == "1"
+        return bool(row) and row["value"] == "1"  # AI is opt-in: off until a reviewer turns it on
 
     def llm_model(self):
         with self.db.connect() as cx:
@@ -236,7 +250,7 @@ class Service:
                 proposals.append(self.proposal_json(cx, row))
             disputes = self.disputes_for(cx, identity)
             investigations = [{
-                "id": row["id"], "at": row["at"], "result": json.loads(row["result"]),
+                "id": row["id"], "at": row["at"], "result": upgrade_investigation(json.loads(row["result"])),
             } for row in cx.execute(
                 "SELECT * FROM investigations WHERE card_id=? ORDER BY at DESC LIMIT 20", (identity,)
             )]

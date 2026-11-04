@@ -47,8 +47,11 @@ export type Proposal = {
   approval: { id: string; actor: string; at: string; proof_hash: string } | null;
 };
 export type Investigation = {
-  status: string; mode: string; summary: string; clauses: string[]; evidence: string[];
+  status: "ai_summary" | "ai_unavailable" | "rules_only" | "needs_person"; mode: string; model: string | null;
+  summary: string; clauses: string[]; evidence: string[];
+  findings: { title: string; clause: string; blocking: boolean; family: string; reference: string }[];
   critic: { safe: boolean; reason: string }; correction: Correction | null;
+  note_assessment: "explains_exception" | "unrelated" | "unclear" | "no_note" | "instructions"; note_reason: string;
 };
 export type Dispute = {
   id: string; line_id: string | null; reason: string; revision: number; created_at: string;
