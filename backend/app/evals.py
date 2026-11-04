@@ -50,6 +50,16 @@ def code_hash():
     return hashlib.sha256(b"".join(p.read_bytes() for p in files)).hexdigest()
 
 
+def detection_metrics(tp, fp, fn):
+    return {
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
+        "precision": tp / (tp + fp) if tp + fp else 0,
+        "recall": tp / (tp + fn) if tp + fn else 0,
+    }
+
+
 @lru_cache(maxsize=4)
 def detection_scorecard(seed=42, held_out_seed=104729):
     cards, labels, _ = generate(held_out_seed)
@@ -69,11 +79,12 @@ def detection_scorecard(seed=42, held_out_seed=104729):
             counts["tp"] += len(observed & labelled)
             counts["fp"] += len(observed - labelled)
             counts["fn"] += len(labelled - observed)
-    for counts in counters.values():
-        counts["precision"] = counts["tp"] / (counts["tp"] + counts["fp"]) \
-            if counts["tp"] + counts["fp"] else 0
-        counts["recall"] = counts["tp"] / (counts["tp"] + counts["fn"]) \
-            if counts["tp"] + counts["fn"] else 0
+    counters = {family: detection_metrics(**counts) for family, counts in counters.items()}
+    aggregate = detection_metrics(
+        tp=sum(counts["tp"] for counts in counters.values()),
+        fp=sum(counts["fp"] for counts in counters.values()),
+        fn=sum(counts["fn"] for counts in counters.values()),
+    )
     artifact = Path(os.environ.get("DAYFLOW_SCORECARD", "artifacts/scorecard.json"))
     gates = None
     if artifact.exists():
@@ -83,6 +94,7 @@ def detection_scorecard(seed=42, held_out_seed=104729):
     return {
         "seed": seed, "held_out_seed": held_out_seed, "employees": 30, "periods": 2,
         "labelled_exceptions": sum(map(len, labels.values())), "detection": counters,
+        "detection_aggregate": aggregate,
         "release_gates": gates, "model_evaluation": "Not run; no real-model result claimed.",
         "provenance": "Explicit source-fixture labels, not detector-generated labels. Held-out "
         "seed varies rates and notes within the original scenario templates and adds targeted "
