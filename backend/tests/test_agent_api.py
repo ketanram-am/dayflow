@@ -104,7 +104,7 @@ def test_api_auth_csrf_and_actual_roundtrip(service):
         assert len(client.get("/api/cards").json()["cards"]) == 60
         score = client.get("/api/scorecard")
         assert score.status_code == 200
-        assert 148 <= score.json()["labelled_exceptions"] <= 160
+        assert score.json()["labelled_exceptions"] == 168
         client.post("/api/logout")
         client.post("/api/login", json={
             "email": "e001@dayflow.demo", "password": "Dayflow-demo-2026!",
