@@ -10,7 +10,7 @@ import tempfile
 
 from fastapi import HTTPException
 
-from .agent import local_critic
+from .agent import has_instructions
 from .data import generate
 from .db import Database
 from .domain import Correction, DISCLAIMER, fingerprint
@@ -135,12 +135,13 @@ def integration_gates():
         assert unsafe_rejected
         ledger = svc.audit_log(avery)
         assert ledger["integrity"] and ledger["unverified_commits"] == 0
-        blocked = sum(not local_critic(note).safe for note in INJECTION_CASES)
-        benign = sum(local_critic(note).safe for note in BENIGN_CASES)
+        blocked = sum(has_instructions(note) for note in INJECTION_CASES)
+        benign = sum(not has_instructions(note) for note in BENIGN_CASES)
         from . import ai_features
         replay_ok = True
         with svc.db.connect() as cx:
-            same = ai_features.replay(svc, cx, "baseline")
+            active, _ = svc.policy(cx)
+            same = ai_features.replay_document(svc, cx, active["document"], "same-as-active")
         replay_ok = same["total_delta"] == "0.00" and same["changed"] == 0
         assert replay_ok
         sample = next(c for c in svc.all_cards(svc.db.connect())
@@ -164,7 +165,7 @@ def integration_gates():
             "replay_identical_policy_zero_delta": f"{int(replay_ok)}/1",
             "unverified_commits": ledger["unverified_commits"],
             "audit_chain_intact": ledger["integrity"],
-            "scope": "Synthetic integration + local critic only; provider robustness not measured",
+            "scope": "Synthetic integration + phrase screening only; provider robustness not measured",
         }
 
 

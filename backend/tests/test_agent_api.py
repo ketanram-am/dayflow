@@ -1,18 +1,19 @@
-import json
 
 from fastapi.testclient import TestClient
 import httpx
 import pytest
 
-from app.agent import (
-    Brief, Provider, ProviderFailure, investigate, local_critic, suggest_from_schedule, validate_brief,
-)
-from app.data import generate
-from app.domain import CriticVerdict
-from app.engine import calculate
+from pydantic import StrictBool
+
+from app.agent import Provider, ProviderFailure, has_instructions
+from app.domain import Model
 from app.evals import BENIGN_CASES, INJECTION_CASES
 from app.main import create_app
-from app.policy import baseline
+
+
+class Ping(Model):
+    ok: StrictBool
+    text: str
 
 
 def response(content):
@@ -22,12 +23,12 @@ def response(content):
 
 @pytest.mark.parametrize("note", INJECTION_CASES)
 def test_known_injections(note):
-    assert not local_critic(note).safe
+    assert has_instructions(note)
 
 
 @pytest.mark.parametrize("note", BENIGN_CASES)
 def test_benign_notes(note):
-    assert local_critic(note).safe
+    assert not has_instructions(note)
 
 
 def test_schema_retry_exactly_once(monkeypatch):
@@ -40,58 +41,54 @@ def test_schema_retry_exactly_once(monkeypatch):
 
     monkeypatch.setattr("app.agent.httpx.post", malformed)
     with pytest.raises(ProviderFailure, match="one retry"):
-        Provider().extract(CriticVerdict, "Test", {})
+        Provider().extract(Ping, "Test-malformed", {})
     assert len(calls) == 2
     assert calls[0]["headers"]["Authorization"] == "Bearer synthetic-test-value"
     calls.clear()
-    outputs = iter(["bad", '{"safe": true, "reason": "No instruction override."}'])
+    outputs = iter(["bad", '{"ok": true, "text": "fine"}'])
 
     def eventual(*args, **kwargs):
         calls.append(kwargs)
         return response(next(outputs))
 
     monkeypatch.setattr("app.agent.httpx.post", eventual)
-    assert Provider().extract(CriticVerdict, "Test", {}).safe
+    assert Provider().extract(Ping, "Test-eventual", {}).ok
     assert len(calls) == 2
 
 
-def test_semantic_retry_and_strict_schema(monkeypatch):
+def test_retry_tells_the_model_what_failed(monkeypatch):
     monkeypatch.setenv("DAYFLOW_LLM_API_KEY", "synthetic-test-value")
-    facts = {"findings": [{"issue": "Missing clock-out"}], "schedule_vs_recorded": ["scheduled 09:00-17:00"]}
-    bad = {"summary": "Pay is 999 dollars.", "note_assessment": "unclear", "note_reason": ""}
-    good = {**bad, "summary": "The clock-out is missing; the schedule ended at 17:00."}
-    outputs = iter([json.dumps(bad), json.dumps(good)])
-    monkeypatch.setattr("app.agent.httpx.post", lambda *a, **k: response(next(outputs)))
-    value = Provider().extract(Brief, "Test-retry", facts, validate=lambda item: validate_brief(item, facts))
-    assert value.summary == good["summary"]
+    sent = []
+    outputs = iter(['{"ok": true, "text": "Pay is 999 dollars."}', '{"ok": true, "text": "fine"}'])
+
+    def post(*args, **kwargs):
+        sent.append(kwargs["json"]["messages"])
+        return response(next(outputs))
+
+    def no_digits(item):
+        if any(ch.isdigit() for ch in item.text):
+            raise ProviderFailure("Numbers are not allowed in text")
+        return item
+
+    monkeypatch.setattr("app.agent.httpx.post", post)
+    trace = []
+    assert Provider().extract(Ping, "Test-feedback", {}, validate=no_digits, trace=trace).text == "fine"
+    assert "Numbers are not allowed in text" in sent[1][-1]["content"]
+    assert [step["ok"] for step in trace] == [False, True]
     with pytest.raises(ValueError):
-        CriticVerdict.model_validate({"safe": "true", "reason": "Not a boolean."})
+        Ping.model_validate({"ok": "true", "text": "x"})
     with pytest.raises(ValueError):
-        Brief.model_validate({**good, "salary": 999})
+        Ping.model_validate({"ok": True, "text": "x", "salary": 999})
 
 
-def test_suggestion_comes_from_code_not_the_model():
-    cards = generate()[0]
-    card = next(c for c in cards if any(e["code"] == "missing_endpoint"
-                                       for e in calculate(c).model_dump(mode="json")["exceptions"]))
-    pay = calculate(card).model_dump(mode="json")
-    fix = suggest_from_schedule(card, pay)
-    assert fix and fix.edits[0].operation == "replace" and "schedule:" + fix.edits[0].shift_id in fix.evidence
-
-
-def test_no_llm_and_missing_provider_manual_review(monkeypatch):
-    card = generate()[0][0]
-    pay = calculate(card).model_dump(mode="json")
-    monkeypatch.setenv("DAYFLOW_LLM_MODE", "off")
-    assert investigate(card, pay, baseline())["status"] == "rules_only"
-    monkeypatch.setenv("DAYFLOW_LLM_MODE", "openai")
-    monkeypatch.delenv("DAYFLOW_LLM_API_KEY", raising=False)
-    degraded = investigate(card, pay, baseline())
-    assert degraded["status"] == "ai_unavailable" and degraded["findings"] == investigate(
-        card, pay, baseline())["findings"]
-    card.note = INJECTION_CASES[0]
-    hostile = investigate(card, pay, baseline())
-    assert hostile["critic"]["safe"] is False and hostile["status"] == "needs_person"
+def test_rate_limit_backs_off_then_succeeds(monkeypatch):
+    monkeypatch.setenv("DAYFLOW_LLM_API_KEY", "synthetic-test-value")
+    replies = iter([httpx.Response(429, headers={"retry-after": "0"},
+                                   request=httpx.Request("POST", "http://provider.test")),
+                    response('{"ok": true, "text": "fine"}')])
+    monkeypatch.setattr("app.agent.httpx.post", lambda *a, **k: next(replies))
+    monkeypatch.setattr("app.agent.time.sleep", lambda seconds: None)
+    assert Provider().extract(Ping, "Test-429", {}).ok
 
 
 def test_api_auth_csrf_and_actual_roundtrip(service):

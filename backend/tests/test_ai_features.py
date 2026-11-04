@@ -1,11 +1,8 @@
 from fastapi.testclient import TestClient
-import pytest
 
 from app import ai_features as ai
-from app.agent import Provider, ProviderFailure
-from app.domain import Rules
+from app.agent import Provider
 from app.main import create_app
-from app.policy import baseline
 from app.services import Service
 
 
@@ -18,11 +15,10 @@ class Fake:
     def __init__(self, *answers):
         self.answers = list(answers)
 
-    def extract(self, schema, instruction, evidence, validate=None):
-        if isinstance(self.answers[0], dict):  # per-clause answers for the compiler
-            answer = self.answers[0].get(evidence.get("clause_id"), schema(claims=[]))
-        else:
-            answer = self.answers.pop(0)
+    def extract(self, schema, instruction, evidence, validate=None, trace=None):
+        answer = self.answers.pop(0)
+        if trace is not None:
+            trace.append({"step": "model", "attempt": 1, "ok": not isinstance(answer, Exception)})
         if isinstance(answer, Exception):
             raise answer
         return validate(answer) if validate else answer
@@ -43,59 +39,6 @@ def pay_for(service, users, card_id=None):
         if pay["status"] == "complete" and pay["lines"]:
             return pay
     raise AssertionError("no complete card in fixtures")
-
-
-def claim(field, value, clause, quote, ambiguous=False):
-    return ai.RuleClaim(field=field, value=str(value), clause=clause, quote=quote,
-                        ambiguous=ambiguous)
-
-
-# ------------------------------------------------------------------ compiler
-def test_compiler_offline_returns_baseline_flagged():
-    result = ai.draft_from_prose(Off(), None, "draft-offline")
-    assert result["status"] == "offline"
-    assert all(p["needs_human"] for p in result["provenance"])
-    assert result["document"]["rules"] == baseline().rules.model_dump(mode="json")
-
-
-def test_compiler_accepts_verbatim_quote_and_flags_ambiguous():
-    text = baseline().clauses["DF-004"]
-    daily = "the first 480 worked minutes are straight time"
-    weekly = "Minutes in that pool exceeding 2,400 become weekly overtime"
-    assert daily in text and weekly in text
-    fake = Fake({"DF-004": ai.ExtractedRules(claims=[
-        claim("daily_minutes", "480 minutes", "DF-004", daily),
-        claim("weekly_minutes", 2400, "DF-004", weekly, ambiguous=True),
-    ])})
-    result = ai.draft_from_prose(fake, None, "draft-x")
-    by = {p["field"]: p for p in result["provenance"]}
-    assert by["daily_minutes"]["source"] == "model" and not by["daily_minutes"]["needs_human"]
-    assert by["weekly_minutes"]["needs_human"] and by["weekly_minutes"]["source"] == "baseline"
-
-
-def test_compiler_rejects_invented_quote_or_value():
-    clauses = dict(baseline().clauses)
-    bad_quote = ai.ExtractedRules(claims=[claim("daily_minutes", 480, "DF-004", "made up text")])
-    with pytest.raises(ProviderFailure):
-        ai.validate_claims(bad_quote, clauses)
-    quote = clauses["DF-004"][:40]
-    bad_value = ai.ExtractedRules(claims=[claim("daily_minutes", 999999, "DF-004", quote)])
-    with pytest.raises(ProviderFailure):
-        ai.validate_claims(bad_value, clauses)
-    dup = ai.ExtractedRules(claims=[claim("nope", 1, "DF-004", quote)])
-    with pytest.raises(ProviderFailure):
-        ai.validate_claims(dup, clauses)
-
-
-def test_compiler_provider_failure_routes_to_manual_review():
-    result = ai.draft_from_prose(Fake({}), None, "draft-fail")
-    assert result["status"] == "extracted"
-    assert all(p["needs_human"] for p in result["provenance"])
-    failing = Fake({})
-    failing.extract = lambda *a, **k: (_ for _ in ()).throw(ProviderFailure("bad"))
-    result = ai.draft_from_prose(failing, None, "draft-fail-2")
-    assert result["status"] == "manual_review"
-    assert Rules.model_validate(result["document"]["rules"])
 
 
 # ----------------------------------------------------------------- explainer
@@ -136,57 +79,6 @@ def test_numbers_ignore_clause_ids_and_dates():
         ai.Decimal("1234.5")}
 
 
-# -------------------------------------------------------------------- replay
-def sign_and_candidate(service, users, **changes):
-    avery = users["avery"]
-    base = service.policies(avery)["versions"][0]
-    service.sign(base["id"], base["content_hash"], avery)
-    document = baseline()
-    rules = document.rules.model_dump()
-    rules.update(changes)
-    clauses = dict(document.clauses)
-    if "daily_minutes" in changes:  # the compiler requires prose to support each value
-        clauses["DF-004"] = clauses["DF-004"].replace(
-            "first 480 worked", f"first {changes['daily_minutes']} worked")
-    doc = document.model_copy(update={
-        "version": "replay-candidate", "rules": Rules(**rules), "clauses": clauses})
-    return service.compile(doc, avery)["id"]
-
-
-def test_replay_identical_policy_has_zero_delta(service, users):
-    candidate = sign_and_candidate(service, users)
-    with service.db.connect() as cx:
-        result = ai.replay(service, cx, candidate)
-    assert result["total_delta"] == "0.00" and result["changed"] == 0
-    assert result["cards"] > 0
-
-
-def test_replay_threshold_change_has_deterministic_nonzero_delta(service, users):
-    # Lower daily OT threshold (480 -> 420): more overtime premium, never less pay.
-    candidate = sign_and_candidate(service, users, daily_minutes=420)
-    with service.db.connect() as cx:
-        first = ai.replay(service, cx, candidate)
-        second = ai.replay(service, cx, candidate)
-    assert first == second
-    assert float(first["total_delta"]) > 0 and first["changed"] > 0
-
-
-def test_replay_unknown_candidate_is_none(service, users):
-    with service.db.connect() as cx:
-        assert ai.replay(service, cx, "missing") is None
-
-
-# --------------------------------------------------------------------- demos
-def test_unsafe_fix_demo_is_rejected_by_verifier(service, users):
-    avery = users["avery"]
-    base = service.policies(avery)["versions"][0]
-    service.sign(base["id"], base["content_hash"], avery)
-    card = next(c for c in service.all_cards(service.db.connect()) if any(
-        s.start and s.end for s in c.shifts))
-    result = ai.unsafe_fix_demo(service, card.id, avery)
-    assert result["verified"] is False and result["failures"] and not result["committed"]
-
-
 # ------------------------------------------------------------------ API/roles
 def test_api_roles_toggle_and_off_mode(service, monkeypatch):
     monkeypatch.delenv("DAYFLOW_LLM_MODE", raising=False)
@@ -195,8 +87,6 @@ def test_api_roles_toggle_and_off_mode(service, monkeypatch):
             "email": "e001@dayflow.demo", "password": "Dayflow-demo-2026!"})
         client.headers["X-CSRF-Token"] = login.json()["csrf"]
         assert client.post("/api/llm", json={"enabled": False}).status_code == 403
-        assert client.post("/api/policies/replay",
-                           json={"candidate_id": "baseline"}).status_code == 403
         own = client.post("/api/cards/e001-2026-10-19/explain",
                           json={"question": "Why this total?"})
         assert own.status_code == 200 and own.json()["source"] == "template"
@@ -209,10 +99,6 @@ def test_api_roles_toggle_and_off_mode(service, monkeypatch):
         client.headers["X-CSRF-Token"] = login.json()["csrf"]
         assert client.post("/api/llm", json={"enabled": False}).json()["enabled"] is False
         assert client.get("/api/config").json()["llm_enabled"] is False
-        draft = client.post("/api/policies/draft-from-prose", json={}).json()
-        assert draft["status"] == "offline"
-        replay = client.post("/api/policies/replay", json={"candidate_id": "baseline"})
-        assert replay.status_code == 200 and replay.json()["total_delta"] == "0.00"
 
 
 def test_provider_kill_switch(monkeypatch):
@@ -230,20 +116,6 @@ def test_ollama_mode_needs_no_key_and_reports_licence(monkeypatch):
     assert provider.mode == "ollama" and "Apache-2.0" in provider.licence
     assert provider.status()["reachable"] is False
     assert "verify" in Provider(model="mystery:1b").licence.lower()
-
-
-def test_compiler_reverts_contradictory_extraction():
-    text = baseline().clauses["DF-004"]
-    quote = "the first 480 worked minutes are straight time, the next\n  240 worked minutes"
-    assert " ".join(quote.split()) in " ".join(text.split())
-    fake = Fake({"DF-004": ai.ExtractedRules(claims=[
-        claim("daily_minutes", 480, "DF-004", quote),
-        claim("double_minutes", 240, "DF-004", quote),  # misread: 240 < 480 contradicts rules
-    ])})
-    result = ai.draft_from_prose(fake, None, "draft-conflict")
-    by = {p["field"]: p for p in result["provenance"]}
-    assert result["document"]["rules"]["double_minutes"] == 720
-    assert by["double_minutes"]["needs_human"] and "reverted" in by["double_minutes"]["note"]
 
 
 def test_llm_status_endpoint_reviewer_only(service, monkeypatch):
@@ -271,19 +143,12 @@ def test_ai_is_opt_in_and_results_are_cached(service, monkeypatch):
     def reply(*args, **kwargs):
         calls.append(1)
         import httpx
-        body = {"choices": [{"message": {"content": '{"safe": true, "reason": "ok text"}'}}]}
+        body = {"choices": [{"message": {"content": '{"ok": true, "text": "ok text"}'}}]}
         return httpx.Response(200, json=body, request=httpx.Request("POST", "http://x"))
 
     monkeypatch.setattr("app.agent.httpx.post", reply)
-    from app.domain import CriticVerdict
+    from test_agent_api import Ping
     provider = Provider()
-    args = (CriticVerdict, "cache-test-instruction", {"note": "unique cache test note"})
-    assert provider.extract(*args).safe and provider.extract(*args).safe
+    args = (Ping, "cache-test-instruction", {"note": "unique cache test note"})
+    assert provider.extract(*args).ok and provider.extract(*args).ok
     assert len(calls) == 1
-
-
-def test_legacy_investigation_records_are_upgraded():
-    from app.services import upgrade_investigation
-    old = {"status": "manual_review", "summary": "x", "critic": {"safe": False, "reason": "r"}}
-    new = upgrade_investigation(old)
-    assert new["status"] == "needs_person" and new["findings"] == [] and new["note_assessment"] == "no_note"

@@ -10,7 +10,7 @@ import re
 
 from pydantic import Field
 
-from .agent import ProviderFailure, local_critic
+from .agent import ProviderFailure, has_instructions
 from .domain import Model, PolicyDocument, Rules
 from .policy import CITATIONS, compile_policy
 
@@ -118,8 +118,7 @@ def apply_change(base: PolicyDocument, field: str, new: Decimal, version="what-i
 
 def propose_change(provider, question, active: PolicyDocument):
     """Understand the question: model first (when on), rule parser as fallback."""
-    critic = local_critic(question)
-    if not critic.safe:
+    if has_instructions(question):
         return None, "blocked", "The request contains instructions for the assistant and was not used."
     if provider.mode != "off":
         try:

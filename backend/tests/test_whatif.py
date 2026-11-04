@@ -72,7 +72,8 @@ def test_what_if_matches_replay_of_equivalent_saved_version(service, users):
         ai.PolicyDocument.model_validate(result["document"]).model_copy(update={"version": "saved-what-if"}),
         avery)
     with service.db.connect() as cx:
-        direct = ai.replay(service, cx, saved["id"])
+        row = cx.execute("SELECT * FROM policies WHERE id=?", (saved["id"],)).fetchone()
+        direct = ai.replay_document(service, cx, row["document"], row["version"])
     assert direct["total_delta"] == result["replay"]["total_delta"]
 
 

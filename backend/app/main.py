@@ -11,12 +11,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import Field, StrictBool
 
-from datetime import date
 
-from .agent import Provider, investigate
+from .agent import Provider
 from . import ai_features, whatif
-from .db import Database, audit, now, password_hash, uid
-from .domain import Correction, DISCLAIMER, Model, PolicyDocument, canonical
+from .ai_planner import make_ai
+from .desk import Desk
+from .db import Database, audit, password_hash, uid
+from .domain import Correction, DISCLAIMER, Model, PolicyDocument
 from .services import Service, fail, reviewer
 
 
@@ -53,25 +54,23 @@ class LlmToggle(Model):
     model: str | None = Field(default=None, max_length=100, pattern=r"^[a-zA-Z0-9._:/-]+$")
 
 
-class ProseInput(Model):
-    prose: str | None = Field(default=None, max_length=60000)
-    version: str = Field(default="dayflow-ai-draft", min_length=3, max_length=100,
-                         pattern=r"^[a-zA-Z0-9._-]+$")
-
-
 class WhatIfInput(Model):
     question: str | None = Field(default=None, max_length=300)
     field: str | None = Field(default=None, max_length=40)
     value: float | None = Field(default=None, ge=0, le=100000)
 
 
+class RunInput(Model):
+    use_ai: StrictBool = True
+
+
+class AnswerInput(Model):
+    reply: str = Field(pattern=r"^(yes|no|correct)$")
+    time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
 class Question(Model):
     question: str = Field(min_length=3, max_length=300)
-
-
-class ReplayInput(Model):
-    candidate_id: str = Field(max_length=100)
-    period_start: date | None = None
 
 
 class DisputeInput(Reason):
@@ -234,24 +233,42 @@ def create_app(database_path=None):
     def audit_log(user=Depends(current_user), svc=Depends(service)):
         return svc.audit_log(user)
 
-    @app.post("/api/cards/{identity}/investigate")
-    def investigation(identity: str, user=Depends(current_user), svc=Depends(service)):
+    def desk(svc):
+        return Desk(svc)
+
+    @app.post("/api/agent/runs")
+    def agent_run(payload: RunInput, user=Depends(current_user), svc=Depends(service)):
+        provider = provider_for(svc)
+        use_ai = payload.use_ai and provider.mode != "off"
+        return desk(svc).start_run(user, ai=make_ai(provider) if use_ai else None,
+                                   model=provider.model if use_ai else None)
+
+    @app.get("/api/agent/runs/latest")
+    def agent_latest(user=Depends(current_user), svc=Depends(service)):
         reviewer(user)
-        detail = svc.detail(identity, user)
-        with svc.db.connect() as cx:
-            card = svc.card(cx, identity, user)
-            policy, _ = svc.policy(cx)
-        result = investigate(card, detail["pay"],
-                             PolicyDocument.model_validate_json(policy["document"]),
-                             provider_for(svc))
-        with svc.db.transaction() as cx:
-            cx.execute("INSERT INTO investigations VALUES(?,?,?,?,?)",
-                       (uid("inv-"), identity, user["id"], canonical(result), now()))
-            audit(cx, user["id"], "investigation_completed", identity, {
-                "status": result["status"], "mode": result["mode"],
-                "critic_safe": result["critic"]["safe"],
-            })
-        return result
+        return {"run": desk(svc).run()}
+
+    @app.get("/api/resolutions")
+    def resolutions(user=Depends(current_user), svc=Depends(service)):
+        return desk(svc).resolutions(user)
+
+    @app.post("/api/resolutions/approve-ready")
+    def approve_ready(user=Depends(current_user), svc=Depends(service)):
+        return desk(svc).approve_ready(user)
+
+    @app.post("/api/resolutions/{identity}/approve")
+    def approve_resolution(identity: str, user=Depends(current_user), svc=Depends(service)):
+        return desk(svc).approve(identity, user)
+
+    @app.post("/api/resolutions/{identity}/reject")
+    def reject_resolution(identity: str, payload: Reason, user=Depends(current_user),
+                          svc=Depends(service)):
+        return desk(svc).reject(identity, payload.reason, user)
+
+    @app.post("/api/resolutions/{identity}/answer")
+    def answer_resolution(identity: str, payload: AnswerInput, user=Depends(current_user),
+                          svc=Depends(service)):
+        return desk(svc).answer(identity, user, payload.reply, payload.time)
 
     @app.get("/api/config")
     def config(user=Depends(current_user), svc=Depends(service)):
@@ -272,20 +289,6 @@ def create_app(database_path=None):
     def toggle_llm(payload: LlmToggle, user=Depends(current_user), svc=Depends(service)):
         return svc.set_llm(payload.enabled, user, payload.model)
 
-    @app.post("/api/policies/draft-from-prose")
-    def draft_policy(payload: ProseInput, user=Depends(current_user), svc=Depends(service)):
-        reviewer(user)
-        try:
-            result = ai_features.draft_from_prose(provider_for(svc), payload.prose, payload.version)
-        except ValueError as exc:
-            fail(str(exc), 422)
-        with svc.db.transaction() as cx:
-            audit(cx, user["id"], "policy_draft_extracted", payload.version, {
-                "status": result["status"], "mode": provider_for(svc).mode,
-                "flagged": [p["field"] for p in result["provenance"] if p.get("needs_human")],
-            })
-        return result
-
     @app.post("/api/cards/{identity}/explain")
     def explain(identity: str, payload: Question, user=Depends(current_user),
                 svc=Depends(service)):
@@ -295,19 +298,6 @@ def create_app(database_path=None):
             audit(cx, user["id"], "paycheck_explained", identity, {
                 "source": result["source"], "status": result["status"],
                 "mode": result["mode"],
-            })
-        return result
-
-    @app.post("/api/policies/replay")
-    def policy_replay(payload: ReplayInput, user=Depends(current_user), svc=Depends(service)):
-        reviewer(user)
-        with svc.db.connect() as cx:
-            result = ai_features.replay(svc, cx, payload.candidate_id, payload.period_start)
-        if result is None:
-            fail("Candidate policy not found", 404)
-        with svc.db.transaction() as cx:
-            audit(cx, user["id"], "policy_replayed", payload.candidate_id, {
-                "period": result["period_start"], "total_delta": result["total_delta"],
             })
         return result
 
@@ -325,14 +315,6 @@ def create_app(database_path=None):
                 "field": result.get("change", {}).get("field"),
                 "total_delta": (result.get("replay") or {}).get("total_delta"),
             })
-        return result
-
-    @app.post("/api/cards/{identity}/demo/unsafe-fix")
-    def demo_unsafe(identity: str, user=Depends(current_user), svc=Depends(service)):
-        reviewer(user)
-        result = ai_features.unsafe_fix_demo(svc, identity, user)
-        if result is None:
-            fail("This timecard has no complete shift to use for the demo", 422)
         return result
 
     @app.get("/api/scorecard")
