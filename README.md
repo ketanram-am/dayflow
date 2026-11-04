@@ -1,22 +1,94 @@
 # Dayflow
 
-**Workforce intelligence, with receipts.**
+**A timecard resolution agent that proves every fix before payroll sees it.**
 
 **simplified mock policy, not legal advice**
 
-Dayflow turns timecard exceptions into evidence-backed, independently reproduced
-corrections. **The LLM proposes. The engine verifies. A human approves.**
-Employees can inspect each earnings line and dispute it without silently changing pay.
+Every pay period, timecards arrive with missed punches, duplicate punches, missed meal
+breaks, schedule clashes and overtime. Employees usually explain the problem in their own
+words ("Forgot to clock out, left at 6:15 after closing"), and a manager reads every note
+and fixes every card by hand.
 
-This is a functioning, local-first challenge demonstrator, not a payroll service,
-legal compliance product, or production-ready identity system. All people and
-attendance records are synthetic. No screenshots of workers, location, biometrics,
-keystrokes, or other surveillance data are collected.
+Dayflow's agent does that work. It reads each timecard and the employee's note, plans a
+**compliant** fix for every exception, has a deterministic pay engine **prove** the fix,
+and routes the card to whoever acts next:
+
+| Lane | Meaning | Who acts |
+|---|---|---|
+| **Ready to approve** | Fix checked by the engine; nobody's hours change (duplicates removed, meal premium paid, approved extra shift paid) | Manager, one click or "approve all" |
+| **Waiting on employee** | The fix changes worked time, so the employee confirms the exact proposal, or gives the right time, in one tap | Employee, then manager |
+| **Needs your judgment** | Outside what a timecard edit can fix (schedule clash, sick leave to record in HR) or the note looked like an instruction to the system | Manager |
+
+**The AI proposes. The engine verifies. A different human approves.** The model never
+computes pay, never writes records and never approves anything.
+
+This is a local-first challenge demonstrator on synthetic data, not a payroll service,
+legal compliance product or production identity system. No surveillance data
+(screenshots, location, biometrics, keystrokes) is collected.
+
+## Results on the labelled data
+
+Measured with `python -m app.agent_eval --ai` against labelled answers for all 155 seeded
+exceptions (`evidence/agent_scorecard.json`). AI run: **qwen3:1.7b**, an open-weight
+Apache-2.0 model running locally through Ollama.
+
+| Measure | Rules only | With AI |
+|---|---:|---:|
+| Answers that depend on the employee's note (28) | 32.1% | **92.9%** |
+| All 155 exceptions resolved correctly | 87.3% | **98.7%** |
+| Cards routed to the right lane | 96.7% | **100%** |
+| Right clock time proposed on the first ask | 0 | **10** |
+| Times invented or misread from a note | 0 | **0** |
+| Hostile notes sent to a manager (model never called) | 2/2 | 2/2 |
+| Plans rejected by the pay engine before anyone saw them | 0 | 0 |
+
+When the model got something wrong (for example it tried to read "21:00" from a note that
+never said it), code refused the answer and the card fell back to the rules plan: 10 such
+fallbacks, 0 bad answers shown. Estimated manager time: about 620 minutes by hand vs 25
+minutes reviewing agent plans (stated assumption: 4 minutes per exception, 0.5 per plan).
+All data is synthetic; this is not real-world accuracy.
+
+## How the agent works
+
+1. **Detect.** The pay engine finds every exception (`backend/app/engine.py`), scored
+   against independently written labels (precision and recall 1.0 on a held-out seed).
+2. **Plan.** `backend/app/resolver.py` picks one compliant resolution per exception from a
+   whitelist per exception type. Examples: a missed meal break is **paid as a premium, never
+   "fixed" by moving punches** (that would be time-shaving); a duplicate punch is removed;
+   a schedule clash goes to a manager because a timecard edit cannot fix a schedule.
+3. **Read the note (AI).** Only two decisions depend on free text: what time a missing punch
+   really was, and whether a shift with no punches was worked or a sick day.
+   `backend/app/ai_planner.py` asks the model for that reading only. Code then finds the
+   sentence in the note that states the time; if no sentence says it, the answer is
+   rejected. Code writes every sentence the user sees.
+4. **Prove.** The engine applies the fix in memory and recomputes pay. A fix that leaves the
+   problem or creates a new one is rejected before a human sees it.
+5. **Route and approve.** Plans land in lanes. Approval creates the correction, binds the
+   employee's recorded confirmation, re-verifies the full pay period and commits it in an
+   audited transaction. The agent account can author but never approve.
+
+Guardrails: strict JSON schemas with one retry that tells the model exactly what failed;
+rate-limit backoff; a per-input answer cache; a kill switch; AI off by default. Notes that
+try to give instructions skip the model entirely. With AI off, the whole product still
+works on the rules plan.
+
+## Other features
+
+- **Overtime prevention (next week).** Finds people scheduled over 40 hours and proposes
+  giving the extra shift to a teammate with room and no clash. The engine prices both
+  people before and after; the Overview shows the total saving.
+- **What if we changed a rule?** Ask "What if overtime started after 7 hours?". The AI (or a
+  rule parser when AI is off) picks the rule and value; the engine replays last period and
+  shows the dollar impact per employee.
+- **Explain my paycheck.** Employees ask in plain English; every number in the answer must
+  exist in the engine's derivation, otherwise the engine's own explanation is shown.
+- **Signed ruleset, derivations, disputes, audit chain.** Pay rules come from a policy a
+  human signs; every earnings line shows its formula and clause; disputes never change pay
+  silently; every action is hash-chained.
 
 ## Run it
 
-Requirements: Python 3.11+, Node 22+, npm. The verified development environment
-uses Python 3.14 and Node 24.
+Requirements: Python 3.11+, Node 22+, npm.
 
 ```bash
 git clone https://github.com/ketanram-am/dayflow.git
@@ -29,251 +101,96 @@ npm run build --prefix frontend
 .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open **http://127.0.0.1:8000**. The first startup creates a persistent SQLite
-database with 30 employees, two pay periods, 60 timecards, and 155 independently
-labelled exceptions. The initial policy is **unsigned**: preview calculations work,
-but verification and commits remain blocked until a reviewer signs it.
-
-For frontend development, run `npm run dev --prefix frontend` in another terminal
-and open http://localhost:5173. Vite proxies `/api` to port 8000.
-Use `DAYFLOW_API_URL` to change the proxy target.
+Open **http://127.0.0.1:8000**. The first start creates a SQLite database with 30
+employees, two pay periods, 60 timecards and 155 labelled exceptions. Sign the ruleset in
+Policy studio, then open **Resolution queue** and click **Run agent**.
 
 | Account | Role |
 |---|---|
-| `avery@dayflow.demo` | Reviewer and proposal author |
-| `taylor@dayflow.demo` | Independent reviewer/approver |
-| `e001@dayflow.demo` | Maya Chen, employee |
-| `e002@dayflow.demo` through `e030@dayflow.demo` | Other employees |
+| `avery@dayflow.demo` | Reviewer |
+| `taylor@dayflow.demo` | Second reviewer |
+| `e001@dayflow.demo` … `e030@dayflow.demo` | Employees (e004 Alex Rivera is a good demo) |
 
-Local demo password: `Dayflow-demo-2026!`. These are real separate cookie sessions,
-not a client-side role switch. Set `DAYFLOW_DEMO_PASSWORD` **before the first
-database startup** to change the seeded password. The demo identity shortcuts
-still display the documented default; enter a custom password manually.
+Local demo password: `Dayflow-demo-2026!`. Do not expose demo accounts publicly.
 
-The app does not load `.env` implicitly. Copy `.env.example` for reference, then
-export the settings you need in your shell. `DAYFLOW_DB` chooses a database path;
-starting with a **new path** creates a fresh unsigned demo without deleting history.
-Do not expose demo accounts on the public internet.
+### Turning on the AI (open-weight models)
 
-## A complete user journey
-
-1. **Review policy.** Open Policy studio, inspect source clauses and all twelve
-   executable mappings, then acknowledge review and sign the exact content hash.
-   New versions compile into immutable drafts; the original cannot be overwritten.
-2. **Investigate.** In Exception desk, select Maya's October 19 period. Inspect
-   punches, planned/actual breaks, blocking exceptions, and the untrusted employee note.
-   Run an investigation: Maya's intentionally hostile note is flagged by the
-   critic and routed to manual review. A benign note receives an explicitly
-   labelled offline evidence brief. Detection and derivations work without a model.
-3. **Propose.** Draft a punch/break correction. A schedule can populate an
-   explicitly unconfirmed suggestion, never proof that work occurred. Proposals
-   include evidence and clause references and do not write attendance records.
-4. **Confirm.** Unknown or reduced time requires the subject employee's authenticated
-   confirmation of that exact immutable proposal. Other corrections can use an
-   evidence-backed manager attestation. Switch accounts by signing out and in.
-5. **Verify and approve.** Avery verifies the whole period. Another reviewer,
-   such as Taylor, must approve. Approval recomputes again inside one SQLite
-   transaction and binds source revisions, policy, attestations, candidate hashes,
-   and before/after derivations. Stale or invalid changes cannot commit.
-6. **Explain and dispute.** Maya sees the persisted earnings, regular rates,
-   rounding, source references, and formulas. A per-line or whole-card dispute
-   opens a review. Reviewer resolution does not silently alter pay.
-7. **Inspect governance.** Audit ledger shows the hash chain, actors, evidence,
-   and zero-unverified-commit measurement. Eval scorecard separates deterministic
-   synthetic results from unavailable real-model measurements.
-
-## AI-assisted features (all optional, all validated)
-
-**Open-weight models (recommended).** Run locally with Ollama; no key, no data leaves the machine:
+Verify the selected model's licence and acceptable-use terms before use.
 
 ```bash
-ollama pull gpt-oss:20b          # Apache-2.0 + gpt-oss usage policy (or: ollama pull qwen3:8b, Apache-2.0)
-export DAYFLOW_LLM_MODE=ollama DAYFLOW_LLM_MODEL=gpt-oss:20b
+ollama pull qwen3:1.7b                      # Apache-2.0, ~1.4 GB, light on a laptop
+export DAYFLOW_LLM_MODE=ollama DAYFLOW_LLM_MODEL=qwen3:1.7b
+export DAYFLOW_LLM_CACHE=evidence/llm-cache.json   # reuse recorded answers; no model calls for them
 ```
 
-The Overview page shows the installed models, reachability and licence hint. **Verify the
-selected model's licence and acceptable-use terms before use**; the in-app hint is not legal
-review. The compiler, explainer and investigator were exercised live against `qwen3:8b`.
-Use `DAYFLOW_LLM_MODE=openai` for any hosted OpenAI-compatible endpoint.
-
-With AI configured a reviewer can switch AI on or off at runtime from
-the sidebar; off behaves exactly like mode `off` and is audited.
-
-| Feature | Where | Guardrail |
-|---|---|---|
-| **AI policy compiler** | Policy studio, *Extract rules from policy text* | Each rule needs a verbatim quote; value must literally appear in it; unclear rules keep the reviewed baseline and are flagged. Draft only; a human compiles and signs. |
-| **Explain my paycheck** | Pay derivation tab | Model wording only. Every number must appear in the engine trace and cited lines must exist, else one retry then a deterministic template built from the trace. |
-| **Policy change replay** | Policy studio, any non-active version | Recomputes the latest period under old and new rulesets with the same engine; per-employee dollar diff. Read-only. |
-| **Unsafe fix demo** | Correction & proof tab | Creates a real overlapping proposal that the verifier must reject; never committed. |
-
-## Architecture and trust boundaries
-
-```text
-React / TypeScript glass workspace
-        | authenticated cookie + CSRF
-FastAPI API ---------------------- OpenAPI: /docs and /openapi.json
-        |
-        +-- Policy compiler --> immutable source/rules/hash --> human sign-off
-        |
-        +-- Investigator --> optional structured provider + independent critic
-        |                    untrusted notes; no DB capabilities; no pay arithmetic
-        |
-        +-- Pure Decimal engine --> detectors + full earnings derivation
-        |
-        +-- Immutable proposal --> confirmation / evidence attestation
-        |                          --> full-period verifier --> independent reviewer
-        |
-        +-- SQLite transaction --> immutable approval + gated timecard revision
-                                   + append-only, hash-linked audit
-```
-
-| Location | Responsibility |
-|---|---|
-| `backend/app/domain.py` | Strict Pydantic contracts and timezone-aware timestamps |
-| `backend/app/policy.py` | Bounded source-to-rules compiler and clause mappings |
-| `backend/app/engine.py` | Pure minute-based Decimal pay, detectors, traces, comp-off |
-| `backend/app/data.py` | Seeded synthetic fixtures and independently assigned labels |
-| `backend/app/agent.py` | Optional schema-validated provider, one retry, injection critic, fallback |
-| `backend/app/services.py` | Authorization, proposals, attestations, proofs, atomic approval, disputes |
-| `backend/app/db.py` | Schema, update guards, immutable history, audit hash chain |
-| `backend/app/main.py` | API, sessions, CSRF, same-origin guards, static frontend |
-| `backend/app/evals.py` | Reproducible detection and workflow scorecards |
-| `frontend/src/` | Exception workbench, paycheck explorer, policy studio, ledger, scorecard |
-
-### Payroll decisions
-
-The authoritative fictional source is [docs/mock-policy.md](docs/mock-policy.md):
-eleven clauses, twelve reviewed assumptions, and 63 documented worked/boundary examples.
-The engine handles hourly non-exempt, salaried non-exempt, and salaried exempt
-employees. It implements daily/weekly non-stacking overtime, double time, regular-rate
-bonus/differential allocation, meal premiums and source waivers, leave deductions,
-and chronological exempt comp-off.
-
-UTC elapsed minutes are attributed to local dates/weeks. Breaks remain separate
-from work. Midnight splits reset daily counters without splitting the source meal
-obligation. Monetary components aggregate weekly before half-up cent rounding;
-meal premiums aggregate per shift-start date. Unknown earnings are `null`, never
-zero. The UI formats engine amounts but never calculates earnings.
-
-Every verification recomputes full affected periods, including linked neighboring
-periods and comp-off balances. All affected periods must exist and be open.
-Changed shift boundaries invalidate old waivers and weekend-work approval:
-those trusted facts cannot be copied to materially changed work by the model.
-Missing before-pay produces a **null delta**, not an invented dollar savings claim.
-
-The compiler accepts a bounded JSON policy document, not arbitrary employment law.
-It validates supported fields, bounds, ordering, and numeric source support.
-Literal matching is **not semantic proof**: a human signs the interpretation.
-Fixed salary, calendar, rounding, leave, and approval semantics live in the
-versioned engine; unsupported rule types require implementation and review.
-
-## Optional LLM
-
-The default is `DAYFLOW_LLM_MODE=off`; no provider credential is required.
-
-```bash
-export DAYFLOW_LLM_MODE=openai
-export DAYFLOW_LLM_API_KEY='your-provider-key'
-export DAYFLOW_LLM_MODEL='your-supported-model'
-# Optional OpenAI-compatible provider:
-# export DAYFLOW_LLM_BASE_URL='https://your-provider.example/v1'
-```
-
-Only enable this for synthetic data and a provider you trust. Enabling it sends
-synthetic time evidence and mock policy clauses to that configured provider.
-The local pattern critic runs first; a separate structured-model critic runs before
-the investigator. Every response is parsed against Pydantic's forbidden-extra
-schema and validated for allowed citations and engine-only numeric prose.
-Each schema operation has **one retry**, then explicit manual review. Timeout,
-invalid JSON, invented citations, forbidden fields, missing keys, or rejected
-critic output do not fall back to a fake successful recommendation.
-
-Suggested boundaries are untrusted proposals, never verified work. There is no
-provider callback capable of committing attendance, changing pay rates, granting
-leave/waivers, signing policy, or approving a correction. Provider calls and
-semantic-retry behavior have stub coverage; **a real-provider evaluation has not
-been run**, and no general prompt-injection-resistance claim is made.
+Then sign in as a reviewer and press **Turn AI on** on the Overview. Any OpenAI-compatible
+endpoint also works (`DAYFLOW_LLM_MODE=openai`, `DAYFLOW_LLM_BASE_URL`,
+`DAYFLOW_LLM_API_KEY`). Only send synthetic data to a provider you trust.
 
 ## Reproduce the evidence
 
 ```bash
-.venv/bin/pytest backend/tests -q
 .venv/bin/ruff check backend
-.venv/bin/python -m app.evals
-cd frontend
-npx playwright install chromium
-npm run test:e2e
+.venv/bin/pytest backend/tests -q
+cd backend && ../.venv/bin/python -m app.evals && ../.venv/bin/python -m app.agent_eval
+# with a model configured:  ../.venv/bin/python -m app.agent_eval --ai
+cd ../frontend && npx playwright install chromium && npm run test:e2e
 ```
 
-The scorecard writes `artifacts/scorecard.json` and `.md`. CI runs the same commands,
-publishes the scorecard and browser artifacts, and fails on detection mismatches or
-failed integrity/workflow assertions. The in-app scorecard displays integration
-gates only when the artifact's source hash matches the current backend.
+## Architecture
 
-Current fixture evidence: 155 labelled exceptions (40 missed-punch, 8 overtime-risk,
-60 schedule-conflict, 47 policy-breach); 10 independently eligible missing-punch
-corrections; 10 known-pattern injection cases and 8 benign controls. Detection
-precision is `TP/(TP+FP)`, recall is `TP/(TP+FN)`. Fix acceptance means **verifier**
-acceptance of eligible fixtures, not manager acceptance in the real world.
-The held-out seed varies rates and notes within the same six scenario templates;
-it is not unseen scenario or real-world validation.
+```text
+React + TypeScript (queue, lanes, drawer, derivations)
+        | cookie session + CSRF
+FastAPI ── /api/agent/runs, /api/resolutions/*, /api/planner, /api/policies/what-if ...
+        |
+        ├─ resolver.py     compliant plan per exception, lanes          (no AI)
+        ├─ ai_planner.py   reads notes; code grounds quotes and times    (AI, optional)
+        ├─ engine.py       pure Decimal pay engine, detectors, traces    (no AI)
+        ├─ desk.py         runs, approvals, employee answers             (no AI)
+        ├─ services.py     proposals, verification, atomic commit
+        └─ db.py           SQLite, immutable plans/answers/approvals, hash-chained audit
+```
 
-Negative coverage includes unsigned/stale policy, changed source records,
-self-approval, wrong employee, missing confirmation, tampered proof hash,
-unsupported rosters, invalid offsets, overlaps, comp-off shortfalls, failed
-transaction writes, unauthorized access, and direct unverified database updates.
-Browser coverage exercises distinct authenticated identities and persistence,
-not just mocked dashboard screenshots.
+| Location | Responsibility |
+|---|---|
+| `backend/app/engine.py` | Minute-based Decimal pay, detectors, derivation traces |
+| `backend/app/resolver.py` | Allowed resolutions per exception code, simulation, lanes |
+| `backend/app/ai_planner.py` | Note reading with grounded quotes and times |
+| `backend/app/desk.py` | Agent runs, approve / approve all, employee answers |
+| `backend/app/agent_eval.py` | Agent vs rules-only scorecard against labelled answers |
+| `backend/app/planner.py` | Next-week overtime prevention |
+| `backend/app/data.py` | Synthetic data, detector labels and expected resolutions |
+| `frontend/src/Queue.tsx` | Resolution queue, plan drawer, employee questions |
 
-## Interface design
+### Payroll decisions
 
-The UI uses one stylesheet (`frontend/src/dayflow.css`). The palette is deep
-navy, royal blue and a sky-blue accent on a white canvas. Glass is used only
-over the navy page header. Text is set in Instrument Sans, and every figure is
-set in JetBrains Mono so columns align. Each workspace has its own layout:
-
-- the exception desk is a queue with a detail pane and a scheduled-vs-recorded
-  timeline;
-- the pay explorer is a derivation ledger;
-- the policy studio shows parameters next to their source clause;
-- the audit ledger is a hash chain.
-
-The UI displays engine output only; it never computes pay.
+The fictional policy is [docs/mock-policy.md](docs/mock-policy.md): eleven clauses and 63
+worked examples. The engine handles hourly non-exempt, salaried non-exempt and salaried
+exempt employees: daily/weekly non-stacking overtime, double time, regular rate with
+differentials, meal premiums, leave and exempt comp-off. Unknown earnings are `null`,
+never zero. The UI only displays engine numbers.
 
 ## What is and is not new
 
-Missed-punch detection, regularization, overtime reports, scheduling alerts,
-and manager approval already exist in workforce systems. Dayflow does not claim
-these as inventions. The demonstration emphasizes visible signed rules,
-proof-carrying corrections, employee-readable derivations/disputes, and a measured
-fail-closed harness. The proof is reproducible deterministic evidence, **not an
-SMT/formal proof or certification of legal correctness**.
+Exception detection and approval routing already exist in workforce systems (Dayforce,
+UKG and others). Dayflow's contribution is the resolution agent with proof: reading the
+employee's own explanation into an exact, grounded correction, proving it with a
+deterministic engine before anyone sees it, routing it to the right person, and
+publishing a measured comparison against a rules-only baseline.
 
-All P2 features (solver repair, per-day jurisdiction,
-consented off-the-clock prompts) remain explicitly deferred under the agreed scope.
-Taxes, net pay, disbursement, arbitrary statutory policy compilation, and real HRIS
-integration are outside this mock policy.
+All code here is original. No GPL/AGPL code was copied. Direct dependencies: FastAPI,
+Pydantic, HTTPX, Uvicorn, React, Vite, TypeScript, motion, Lucide.
 
-All implementation code here is original to this project. No GPL/AGPL or
-unconfirmed-license reference implementation was copied. Direct dependencies
-are FastAPI, Pydantic, HTTPX, Uvicorn, React, Vite, TypeScript, and Lucide; their
-licenses remain with their respective packages. Research links supplied during
-planning were design context, not independently verified evidence or copied code.
+## Deliverables
 
-## Challenge deliverables
+- [Five-slide presentation](docs/deck.html)
+- [Demo runbook](docs/demo.md) and [word-for-word narration](docs/narration-script.md)
+- **Demo video: pending recording.** Add the URL here before submission.
 
-- [Five-slide presentation](docs/deck.html): open locally in a browser; arrow keys
-  navigate and print produces five presentation pages.
-- [Ten-minute demo runbook](docs/demo.md): exact identities and failure/success flow.
-- **Demo video: pending a real recording and upload.** No placeholder is presented
-  as a recorded video. Add the actual ten-minute video URL here before submission.
+## Limits
 
-### Operational limits
-
-This demo uses public seeded identities, a shared local password, a single local
-workspace, and PBKDF2-backed SQLite sessions. It is not enterprise SSO, tenant
-isolation, production authorization provisioning, MFA, key management, a payroll
-integration, or an externally audited secure service. Use HTTPS and secure cookies
-outside localhost, and replace demo authentication before deployment.
-SQLite triggers and hashes protect the application workflow, not against an
-administrator who can replace database files or executable code.
+Synthetic data and labels written by us; a 1.7B-parameter model tested on one seed; times
+are matched only when the note states them; schedule and leave changes are out of scope
+for a timecard edit; demo authentication, single workspace SQLite, and an audit chain that
+is tamper-evident, not tamper-proof against a database administrator.
