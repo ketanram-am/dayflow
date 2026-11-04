@@ -104,7 +104,6 @@ the sidebar; off behaves exactly like mode `off` and is audited.
 | **AI policy compiler** | Policy studio, *Extract rules from policy text* | Each rule needs a verbatim quote; value must literally appear in it; unclear rules keep the reviewed baseline and are flagged. Draft only; a human compiles and signs. |
 | **Explain my paycheck** | Pay derivation tab | Model wording only. Every number must appear in the engine trace and cited lines must exist, else one retry then a deterministic template built from the trace. |
 | **Policy change replay** | Policy studio, any non-active version | Recomputes the latest period under old and new rulesets with the same engine; per-employee dollar diff. Read-only. |
-| **Injection lab** | AI investigation tab | Free text goes through the pattern critic and, when on, a model critic. Never stored. |
 | **Unsafe fix demo** | Correction & proof tab | Creates a real overlapping proposal that the verifier must reject; never committed. |
 
 ## Architecture and trust boundaries

@@ -234,13 +234,6 @@ class Correction(Model):
         return self
 
 
-class Investigation(Model):
-    summary: str = Field(min_length=1, max_length=1200)
-    clauses: list[str] = Field(min_length=1, max_length=11)
-    evidence: list[str] = Field(min_length=1, max_length=30)
-    correction: Correction | None = None
-
-
 class CriticVerdict(Model):
     safe: StrictBool
     reason: str = Field(min_length=1, max_length=1000)

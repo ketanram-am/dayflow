@@ -14,7 +14,7 @@ from pydantic import Field, StrictBool
 from datetime import date
 
 from .agent import Provider, investigate
-from . import ai_features
+from . import ai_features, whatif
 from .db import Database, audit, now, password_hash, uid
 from .domain import Correction, DISCLAIMER, Model, PolicyDocument, canonical
 from .services import Service, fail, reviewer
@@ -59,6 +59,12 @@ class ProseInput(Model):
                          pattern=r"^[a-zA-Z0-9._-]+$")
 
 
+class WhatIfInput(Model):
+    question: str | None = Field(default=None, max_length=300)
+    field: str | None = Field(default=None, max_length=40)
+    value: float | None = Field(default=None, ge=0, le=100000)
+
+
 class Question(Model):
     question: str = Field(min_length=3, max_length=300)
 
@@ -66,10 +72,6 @@ class Question(Model):
 class ReplayInput(Model):
     candidate_id: str = Field(max_length=100)
     period_start: date | None = None
-
-
-class FreeText(Model):
-    text: str = Field(min_length=1, max_length=1000)
 
 
 class DisputeInput(Reason):
@@ -309,12 +311,20 @@ def create_app(database_path=None):
             })
         return result
 
-    @app.post("/api/demo/injection")
-    def demo_injection(payload: FreeText, user=Depends(current_user), svc=Depends(service)):
+    @app.post("/api/policies/what-if")
+    def policy_what_if(payload: WhatIfInput, user=Depends(current_user), svc=Depends(service)):
         reviewer(user)
-        result = ai_features.injection_demo(provider_for(svc), payload.text)
+        if not payload.question and payload.field is None:
+            fail("Ask a question or choose a rule and value", 422)
+        with svc.db.connect() as cx:
+            result = whatif.what_if(svc, cx, provider_for(svc), payload.question, payload.field,
+                                    payload.value, ai_features.replay_document)
         with svc.db.transaction() as cx:
-            audit(cx, user["id"], "injection_demo", "demo", {"verdict": result["verdict"]})
+            audit(cx, user["id"], "policy_what_if", "policy", {
+                "status": result["status"], "source": result.get("source"),
+                "field": result.get("change", {}).get("field"),
+                "total_delta": (result.get("replay") or {}).get("total_delta"),
+            })
         return result
 
     @app.post("/api/cards/{identity}/demo/unsafe-fix")
