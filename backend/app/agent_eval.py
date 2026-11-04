@@ -2,7 +2,7 @@
 
 Run:  python -m app.agent_eval                 (rules-only, no model needed)
       python -m app.agent_eval --ai            (also runs the configured model)
-Writes artifacts/agent_scorecard.json. All data is synthetic; this is not real-world accuracy.
+Writes evidence/agent_scorecard.json. All data is synthetic; this is not real-world accuracy.
 """
 
 from __future__ import annotations
@@ -24,7 +24,8 @@ from .policy import baseline
 from .resolver import plan_card
 from .services import Service
 
-ARTIFACT = Path(__file__).resolve().parents[2] / "artifacts" / "agent_scorecard.json"
+# Tracked in git (unlike artifacts/) so the published scorecard shows the real-model run.
+ARTIFACT = Path(__file__).resolve().parents[2] / "evidence" / "agent_scorecard.json"
 # Stated assumption for the time-saved estimate, not a measurement.
 MINUTES_PER_MANUAL_EXCEPTION = 4.0
 MINUTES_PER_AGENT_PLAN = 0.5

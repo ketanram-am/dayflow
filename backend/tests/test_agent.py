@@ -225,3 +225,25 @@ def test_agent_scorecard_rules_baseline():
     assert score["invented_or_wrong_from_note"] == 0 and score["verifier_rejected_plans"] == 0
     assert score["hostile_notes_routed_to_manager"] == "2/2"
     assert score["right_time_on_first_ask"] == 0  # rules cannot read notes
+
+
+# -------------------------------------------------------------------- planner
+def test_overtime_planner_saves_money_without_clashes():
+    from app.planner import suggestions
+    swaps = suggestions()
+    done = [s for s in swaps if s["saving"]]
+    assert done and all(float(s["saving"]) > 0 and s["overtime_minutes_avoided"] > 0 for s in done)
+    assert len({s["to"] for s in done}) == len(done)  # no teammate gets two extra shifts
+    assert any(s["saving"] is None for s in swaps)  # honest when no safe swap exists
+
+
+def test_planner_endpoint_reviewer_only(service):
+    with TestClient(create_app(service.db.path)) as client:
+        login = client.post("/api/login", json={"email": "avery@dayflow.demo",
+                                                "password": "Dayflow-demo-2026!"})
+        client.headers["X-CSRF-Token"] = login.json()["csrf"]
+        data = client.get("/api/planner").json()
+        first = next(s for s in data["suggestions"] if s["saving"])
+        assert client.post(f"/api/planner/{first['id']}/send").json()["status"] == "sent"
+        assert next(s for s in client.get("/api/planner").json()["suggestions"]
+                    if s["id"] == first["id"])["sent"]

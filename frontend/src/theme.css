@@ -266,3 +266,11 @@ ul.exceptions, .time-evidence details { border-radius: 14px; }
 .question-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .question-actions input { padding: 6px 8px; border: 1px solid var(--line); }
 @media (max-width: 1100px) { .lanes { grid-template-columns: 1fr; } .resolution { padding: 16px; } .run-bar { grid-template-columns: 1fr; } }
+
+.planner .saving { font-size: 20px; color: #0f7a55; }
+.swaps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.swaps li { display: flex; justify-content: space-between; gap: 14px; align-items: center; padding: 12px; border-radius: 12px; background: var(--canvas); }
+.swaps small { display: block; color: var(--ink-3); }
+.swaps p { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
+.swap-side { display: grid; justify-items: end; gap: 6px; }
+.swap-side b { color: #0f7a55; }

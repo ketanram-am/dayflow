@@ -317,6 +317,26 @@ def create_app(database_path=None):
             })
         return result
 
+    @app.get("/api/planner")
+    def planner(user=Depends(current_user), svc=Depends(service)):
+        reviewer(user)
+        from .planner import suggestions
+        with svc.db.connect() as cx:
+            policy, _ = svc.policy(cx)
+            sent = {r["entity"] for r in cx.execute(
+                "SELECT entity FROM audit WHERE action='schedule_swap_recommended'")}
+        rules = PolicyDocument.model_validate_json(policy["document"]).rules
+        return {"week": "2026-11-02", "suggestions": [
+            {**s, "sent": s["id"] in sent} for s in suggestions(rules, rules.weekly_minutes)]}
+
+    @app.post("/api/planner/{identity}/send")
+    def planner_send(identity: str, user=Depends(current_user), svc=Depends(service)):
+        reviewer(user)
+        with svc.db.transaction() as cx:
+            audit(cx, user["id"], "schedule_swap_recommended", identity,
+                  {"note": "Sent to the scheduling team; no schedule was changed here."})
+        return {"status": "sent"}
+
     @app.get("/api/scorecard")
     def scorecard(user=Depends(current_user)):
         reviewer(user)

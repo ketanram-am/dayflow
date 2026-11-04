@@ -146,7 +146,7 @@ def apply_readings(card, items: list[PlanItem], plan: NotePlan) -> list[PlanItem
         ref = item.exception_id.split(":", 2)[2]
         planned = _schedule(card, ref)
         day = _day(planned.start, zone) if planned else "that day"
-        quote = reading.quote.strip()
+        quote = reading.quote.strip().rstrip(".;!")
         if reading.finding == "states_time":
             word = "out" if item.field == "end" else "in"
             result.append(item.model_copy(update={

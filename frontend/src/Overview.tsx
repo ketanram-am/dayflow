@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { Activity, ArrowRight, BrainCircuit, CheckCheck, Cpu, FileSearch, ShieldCheck, Sparkles } from "lucide-react";
+import { Activity, ArrowRight, BrainCircuit, CalendarClock, CheckCheck, Cpu, FileSearch, ShieldCheck, Sparkles } from "lucide-react";
 import { api, type AgentRun, type AuditEvent, type CardRow, type PolicyResponse, type User } from "./api";
 import { currency, friendly, type Run } from "./App";
 import { CountUp, Rise, Stagger } from "./motion";
@@ -64,6 +64,27 @@ const eventIcon = (action: string) =>
   action.includes("investig") || action.includes("explain") || action.includes("draft") ? <BrainCircuit size={14} /> :
     action.includes("commit") || action.includes("approv") ? <CheckCheck size={14} /> :
       action.includes("verif") || action.includes("policy") ? <ShieldCheck size={14} /> : <Activity size={14} />;
+
+type Swap = { id: string; employee: string; to: string | null; shift: string; saving: string | null;
+  overtime_minutes_avoided: number; reason: string; sent: boolean };
+
+/** Next week: overtime that can still be avoided, priced by the pay engine. */
+function OvertimePlanner({ run, busy, refresh }: { run: Run; busy: boolean; refresh: number }) {
+  const [swaps, setSwaps] = useState<Swap[] | null>(null);
+  useEffect(() => { api<{ suggestions: Swap[] }>("/planner").then(d => setSwaps(d.suggestions)).catch(() => setSwaps([])); }, [refresh]);
+  const total = (swaps ?? []).reduce((s, x) => s + Number(x.saving ?? 0), 0);
+  return <div className="card planner"><div className="card-head"><span className="chip-icon"><CalendarClock size={16} /></span><h3>Next week: overtime you can still avoid</h3>
+    {swaps && <strong className="figure saving">{currency(String(total))}</strong>}</div>
+    <p className="muted">From next week's schedule. The pay engine prices both people before and after each swap; nothing changes until scheduling acts.</p>
+    {!swaps ? <div className="skeleton"><i /><i /></div> : <ul className="swaps">{swaps.map(s => <motion.li key={s.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+      <div><strong>{s.employee}{s.to && <> → {s.to}</>}</strong><small>{s.shift}</small><p>{s.reason}</p></div>
+      {s.saving ? <div className="swap-side"><b className="figure">−{currency(s.saving)}</b>
+        <button className="button secondary small" disabled={busy || s.sent} onClick={() => run(() => api(`/planner/${s.id}/send`, "POST"),
+          "Sent to scheduling. Recorded in the audit ledger.")}>{s.sent ? "Sent" : "Send to scheduling"}</button></div>
+        : <span className="badge amber">No safe swap</span>}
+    </motion.li>)}</ul>}
+  </div>;
+}
 
 export default function Overview({ cards, policies, signed, user, run, busy, refresh, go }: {
   cards: CardRow[]; policies: PolicyResponse | null; signed: boolean; user: User; run: Run; busy: boolean;
@@ -135,6 +156,7 @@ export default function Overview({ cards, policies, signed, user, run, busy, ref
           Audit chain {integrity.ok ? "intact" : "BROKEN"} · {integrity.unverified} unverified commits</div>}
       </div>
     </Rise>
+    <Rise><OvertimePlanner run={run} busy={busy} refresh={refresh} /></Rise>
     <Rise className="grid-2">
       <AiEngine run={run} busy={busy} refresh={refresh} />
       <div className="card"><div className="card-head"><span className="chip-icon"><Activity size={16} /></span><h3>Live activity</h3>
