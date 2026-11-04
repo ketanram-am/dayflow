@@ -11,7 +11,7 @@ import tempfile
 from fastapi import HTTPException
 
 from .agent import local_critic
-from .data import generate
+from .data import generate, generate_detection_edge_cases
 from .db import Database
 from .domain import Correction, DISCLAIMER, fingerprint
 from .engine import calculate
@@ -53,6 +53,10 @@ def code_hash():
 @lru_cache(maxsize=4)
 def detection_scorecard(seed=42, held_out_seed=104729):
     cards, labels, _ = generate(held_out_seed)
+    edge_cases = generate_detection_edge_cases(held_out_seed)
+    for _, card, expected in edge_cases:
+        cards.append(card)
+        labels[card.id] = expected
     counters = {family: {"tp": 0, "fp": 0, "fn": 0} for family in (
         "missed_punch", "overtime_risk", "schedule_conflict", "policy_breach"
     )}
@@ -81,8 +85,9 @@ def detection_scorecard(seed=42, held_out_seed=104729):
         "labelled_exceptions": sum(map(len, labels.values())), "detection": counters,
         "release_gates": gates, "model_evaluation": "Not run; no real-model result claimed.",
         "provenance": "Explicit source-fixture labels, not detector-generated labels. Held-out "
-        "seed varies rates and notes within the same six scenario templates; not unseen "
-        "real-world coverage. Integration gates load only from a matching source-hash artifact.",
+        "seed varies rates and notes within the original scenario templates and adds targeted "
+        "synthetic attendance edge cases; not unseen real-world coverage. Integration gates "
+        "load only from a matching source-hash artifact.",
         "disclaimer": DISCLAIMER,
     }
 
