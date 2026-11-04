@@ -216,7 +216,8 @@ def headline(items: list[PlanItem], hostile: bool, simulation: dict | None) -> s
         return "The employee note tries to give instructions to the system. A person should review this card."
     if simulation and not simulation["ok"]:
         return "The pay engine rejected the proposed fix: " + "; ".join(simulation["failures"])
-    first = next((i for i in items if i.kind in MANAGER_KINDS | EMPLOYEE_KINDS), None) or items[0]
+    first = next((i for i in items if i.kind in MANAGER_KINDS), None) or \
+        next((i for i in items if i.kind in EMPLOYEE_KINDS), None) or items[0]
     extra = len(items) - 1
     return first.reason + (f" (+{extra} more)" if extra else "")
 

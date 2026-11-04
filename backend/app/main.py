@@ -320,8 +320,12 @@ def create_app(database_path=None):
     @app.get("/api/scorecard")
     def scorecard(user=Depends(current_user)):
         reviewer(user)
+        import json as _json
+        from .agent_eval import ARTIFACT, evaluate
         from .evals import detection_scorecard
-        return detection_scorecard()
+        agent = _json.loads(ARTIFACT.read_text()) if ARTIFACT.exists() else {
+            "rules_only": evaluate(), "ai": None}
+        return {**detection_scorecard(), "agent": agent}
 
     dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if dist.exists():

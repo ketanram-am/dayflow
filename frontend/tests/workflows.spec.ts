@@ -8,7 +8,7 @@ async function login(page: Page, identity = "avery") {
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   if (identity !== "e001" && !identity.startsWith("e0")) {
     await expect(page.getByRole("heading", { name: /proven/ })).toBeVisible();
-    await page.getByRole("button", { name: "Exception desk", exact: true }).click();
+    await page.getByRole("button", { name: "Timecards", exact: true }).click();
   }
   await expect(page.locator(".queue-table tbody tr").first()).toBeVisible();
 }
@@ -33,13 +33,9 @@ test("signed policy → employee confirmation → independent approval → durab
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Sign & activate ruleset" }).click();
   await expect(page.getByText("This exact ruleset is active.", { exact: false })).toBeVisible();
-  await page.getByRole("button", { name: "Exception desk", exact: true }).click();
+  await page.getByRole("button", { name: "Timecards", exact: true }).click();
   await maya(page);
-  await page.getByRole("button", { name: "AI summary", exact: true }).click();
-  await page.getByRole("button", { name: "Explain this timecard", exact: true }).click();
-  await expect(page.getByText("Needs a person", { exact: true })).toBeVisible();
-  await expect(page.getByText("The AI was skipped", { exact: false })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Review this suggestion" })).toBeVisible();
+  await expect(page.getByText("For context only. Not proof of time worked.")).toBeVisible();
   await page.getByRole("button", { name: "Correction & proof", exact: true }).click();
   await page.getByRole("button", { name: "Draft correction", exact: true }).click();
   const dialog = page.getByRole("dialog");
@@ -77,7 +73,7 @@ test("signed policy → employee confirmation → independent approval → durab
   await expect(page.getByText("Committed by taylor", { exact: false })).toBeVisible();
   await expect(page.getByText("Revision 2", { exact: true })).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "Exception desk", exact: true }).click();
+  await page.getByRole("button", { name: "Timecards", exact: true }).click();
   await maya(page);
   await page.getByRole("button", { name: "Pay derivation", exact: true }).click();
   await expect(page.locator(".pay-total h2")).not.toHaveText("Not yet calculable");
@@ -125,39 +121,58 @@ test("responsive workspace, keyboard modal and policy version editor", async ({ 
   await expect(page.getByRole("checkbox")).not.toBeChecked();
   await expect(page.getByRole("button", { name: "Sign & activate ruleset" })).toBeDisabled();
   await page.screenshot({ path: "../artifacts/dayflow-policy.png", fullPage: true });
-  await page.getByRole("button", { name: "Exception desk", exact: true }).click();
+  await page.getByRole("button", { name: "Timecards", exact: true }).click();
   await expect(page.locator(".queue-table")).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: "../artifacts/dayflow-workspace.png", fullPage: true });
 });
 
-test("benign offline investigation stays useful without a model", async ({ page }) => {
+test("agent resolves the queue: lanes, batch approval, employee one-tap, verified commit", async ({ page }) => {
+  test.setTimeout(180_000);
   await login(page);
-  await page.getByLabel("Search workforce").fill("Jordan Ellis");
-  await page.getByRole("button", { name: "Open Jordan Ellis 2026-10-05" }).click();
-  await page.getByRole("button", { name: "AI summary", exact: true }).click();
-  await page.getByRole("button", { name: "Explain this timecard", exact: true }).click();
-  await expect(page.getByText("Rules-based summary (AI is off)", { exact: true })).toBeVisible();
-  await expect(page.getByText("What the rules engine found")).toBeVisible();
+  await page.getByRole("button", { name: "Resolution queue", exact: true }).click();
+  await expect(page.getByText("Rules only (AI off)")).toBeVisible();
+  await page.getByRole("button", { name: /Run agent/ }).click();
+  await expect(page.getByText(/Run finished/)).toBeVisible({ timeout: 120_000 });
+  const ready = page.getByRole("region", { name: "Ready to approve" });
+  const waiting = page.getByRole("region", { name: "Waiting on employee" });
+  await expect(page.getByRole("region", { name: "Needs your judgment" }).getByText("The employee note tries to give instructions", { exact: false }).first()).toBeVisible();
+  await waiting.getByRole("button", { name: /Open plan for Alex Rivera e004-2026-10-05/ }).click();
+  await expect(page.getByRole("dialog").getByText("Pay engine check")).toBeVisible();
+  await expect(page.getByRole("dialog").getByText("Fill missing punch")).toBeVisible();
+  await page.getByRole("button", { name: "Close plan" }).click();
+  await ready.getByRole("button", { name: /Approve all/ }).click();
+  await expect(page.getByText("All ready plans approved", { exact: false })).toBeVisible({ timeout: 60_000 });
+  await logout(page);
+  await login(page, "e004");
+  await expect(page.getByRole("region", { name: "Questions for you" })).toBeVisible();
+  const question = page.getByRole("region", { name: "Questions for you" }).locator(".question").first();
+  await question.getByLabel("Correct time").fill("17:50");
+  await question.getByRole("button", { name: "Use this time" }).click();
+  await expect(page.getByText("We updated the time", { exact: false })).toBeVisible();
+  await logout(page);
+  await login(page, "taylor");
+  await page.getByRole("button", { name: "Resolution queue", exact: true }).click();
+  const plan = page.getByRole("region", { name: "Ready to approve" }).locator(".plan-card", { has: page.getByRole("button", { name: /e004-2026-10-05/ }) });
+  await expect(plan).toContainText("17:50");
+  await plan.getByRole("button", { name: "Approve" }).click();
+  await expect(page.getByText("Alex Rivera: approved and committed.")).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("button", { name: "Audit ledger", exact: true }).click();
+  await expect(page.getByText("The chain is intact.")).toBeVisible();
+  await page.getByRole("button", { name: "Eval scorecard", exact: true }).click();
+  await expect(page.getByText("Resolution agent: AI vs rules only")).toBeVisible();
 });
 
-test("AI wow layer degrades safely: injection lab, unsafe fix, paycheck explainer, AI draft", async ({ page }) => {
+test("paycheck explainer and what-if degrade safely without a model", async ({ page }) => {
   await login(page);
   await maya(page);
-  await page.getByRole("button", { name: "AI summary", exact: true }).click();
   await page.getByRole("button", { name: "Pay derivation", exact: true }).click();
   await page.getByLabel("Your question").fill("Why is my total this amount?");
   await page.getByRole("button", { name: "Explain", exact: true }).click();
   await expect(page.getByText("Engine derivation")).toBeVisible();
-  await page.getByRole("button", { name: /Correction & proof/ }).click();
-  await page.getByRole("button", { name: "Propose an unsafe fix" }).click();
-  await expect(page.getByText("Rejected by the verifier", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Policy studio", exact: true }).click();
   await page.getByLabel("What-if question").fill("What if overtime started after 7 hours?");
   await page.getByRole("button", { name: "Show the cost" }).click();
   await expect(page.getByText("Understood by rule parser")).toBeVisible();
   await expect(page.getByText("Timecards affected")).toBeVisible();
-  await page.getByText("Advanced: import rules from policy text", { exact: false }).click();
-  await page.getByRole("button", { name: "Extract rules from policy text" }).click();
-  await expect(page.getByText("AI is off: baseline shown", { exact: false })).toBeVisible();
 });

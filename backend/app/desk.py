@@ -133,8 +133,11 @@ class Desk:
         if reply == "no" and hhmm is None:
             new_items, lane_override = items, "judgment"
         elif hhmm is not None:
-            new_items = [i.model_copy(update={"time": hhmm, "source": "note"})
-                         if i.kind == "fill_punch" else i for i in items]
+            first = card.employee.name.split()[0]
+            new_items = [i.model_copy(update={
+                "time": hhmm, "source": "note",
+                "reason": f"{i.reason.split(' Proposed ')[0]} Set to {hhmm}, as {first} confirmed.",
+            }) if i.kind == "fill_punch" else i for i in items]
             lane_override = None
         else:
             new_items = [i.model_copy(update={"kind": "add_shift"}) if i.kind == "ask_employee"

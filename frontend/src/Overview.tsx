@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { Activity, ArrowRight, BrainCircuit, CheckCheck, Cpu, FileSearch, ShieldCheck, Sparkles } from "lucide-react";
-import { api, type AuditEvent, type CardRow, type PolicyResponse, type User } from "./api";
+import { api, type AgentRun, type AuditEvent, type CardRow, type PolicyResponse, type User } from "./api";
 import { currency, friendly, type Run } from "./App";
 import { CountUp, Rise, Stagger } from "./motion";
 
@@ -71,6 +71,10 @@ export default function Overview({ cards, policies, signed, user, run, busy, ref
 }) {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [integrity, setIntegrity] = useState<{ ok: boolean; unverified: number } | null>(null);
+  const [agentRun, setAgentRun] = useState<AgentRun | null>(null);
+  useEffect(() => {
+    api<{ run: AgentRun | null }>("/agent/runs/latest").then(d => setAgentRun(d.run)).catch(() => undefined);
+  }, [refresh]);
   useEffect(() => {
     let live = true;
     api<{ events: AuditEvent[]; integrity: boolean; unverified_commits: number }>("/audit").then(data => {
@@ -82,20 +86,21 @@ export default function Overview({ cards, policies, signed, user, run, busy, ref
   const families = Object.entries(exceptions.reduce<Record<string, number>>((acc, e) => ({ ...acc, [e.family]: (acc[e.family] || 0) + 1 }), {}))
     .sort((a, b) => b[1] - a[1]).map(([label, value], i) => ({ label, value, color: FAMILY_COLORS[i % FAMILY_COLORS.length] }));
   const stage = (names: string[]) => cards.filter(c => names.includes(c.workflow)).length;
+  const lanes = agentRun?.lanes ?? {};
   const funnel = [
     ["Detected", cards.filter(c => c.exceptions.length).length],
-    ["Proposed", stage(["proposed", "manual_review", "verified", "committed"])],
-    ["Verified", stage(["verified", "committed"])],
-    ["Committed", stage(["committed"])],
+    ["Ready to approve", lanes.ready ?? 0],
+    ["Waiting on employee", lanes.waiting ?? 0],
+    ["Needs judgment", lanes.judgment ?? 0],
+    ["Approved", agentRun?.approved ?? 0],
   ] as [string, number][];
   const top = Math.max(1, ...funnel.map(f => f[1]));
   const gross = cards.reduce((s, c) => s + (c.total ? Number(c.total) : 0), 0);
-  const maya = cards.find(c => c.exceptions.some(e => e.code === "missing_endpoint"));
   const hour = new Date().getHours();
   const kpis: [string, number, (n: number) => string, string][] = [
     ["Open exceptions", exceptions.length, n => String(Math.round(n)), "amber"],
     ["Timecards to review", cards.filter(c => c.exceptions.length).length, n => String(Math.round(n)), "blue"],
-    ["Verified, awaiting approval", stage(["verified"]), n => String(Math.round(n)), "violet"],
+    ["Ready for one-click approval", lanes.ready ?? 0, n => String(Math.round(n)), "violet"],
     ["Committed fixes", stage(["committed"]), n => String(Math.round(n)), "green"],
     ["Calculable gross pay", gross, n => currency(String(n)).replace(/\.\d+$/, ""), "teal"],
   ];
@@ -103,9 +108,9 @@ export default function Overview({ cards, policies, signed, user, run, busy, ref
     <Rise className="hero">
       <div><span className="eyebrow"><Sparkles size={14} />{hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}, {user.name.split(" ")[0]}</span>
         <h1>Every correction, <em>proven</em> before it counts.</h1>
-        <p>AI drafts. A deterministic engine recomputes the pay. A second human approves. Nothing is committed without all three.</p></div>
+        <p>The agent reads every timecard and the employee's own note, plans a compliant fix, and the pay engine proves it. You approve the ready ones in one click.</p></div>
       <div className="hero-actions">
-        {maya && <button className="button primary" onClick={() => go("desk", maya.id)}>Open a missed punch <ArrowRight size={15} /></button>}
+        <button className="button primary" onClick={() => go("queue")}>{agentRun ? "Open the resolution queue" : "Run the agent"} <ArrowRight size={15} /></button>
         <button className="button ghost" onClick={() => go("policy")}>{signed ? "Review ruleset" : "Sign the ruleset"}</button>
       </div>
     </Rise>
@@ -122,7 +127,7 @@ export default function Overview({ cards, policies, signed, user, run, busy, ref
     <Rise className="grid-2">
       <div className="card"><div className="card-head"><span className="chip-icon"><FileSearch size={16} /></span><h3>Exception mix</h3></div>
         {families.length ? <Donut parts={families} /> : <p className="muted">No exceptions detected.</p>}</div>
-      <div className="card"><div className="card-head"><span className="chip-icon"><Activity size={16} /></span><h3>Resolution funnel</h3></div>
+      <div className="card"><div className="card-head"><span className="chip-icon"><Activity size={16} /></span><h3>{agentRun ? "Where every exception stands" : "Resolution funnel"}</h3></div>
         <div className="funnel">{funnel.map(([label, value], i) => <div key={label} className="funnel-row"><span>{label}</span>
           <div className="bar"><motion.i initial={{ width: 0 }} animate={{ width: `${(value / top) * 100}%` }} transition={{ delay: 0.25 + i * 0.1, duration: 0.7, ease: [0.22, 1, 0.36, 1] }} /></div>
           <b className="figure">{value}</b></div>)}</div>
