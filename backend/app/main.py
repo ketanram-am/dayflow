@@ -70,6 +70,10 @@ class AnswerInput(Model):
     time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
+class DemoSwitch(Model):
+    user_id: str = Field(max_length=40)
+
+
 class Question(Model):
     question: str = Field(min_length=3, max_length=300)
 
@@ -170,6 +174,48 @@ def create_app(database_path=None):
                 (datetime.now(timezone.utc) + timedelta(hours=8)).isoformat(),
             ))
             audit(cx, row["id"], "session_started", row["id"], {})
+            response.set_cookie("dayflow_session", token, httponly=True, samesite="strict",
+                                secure=os.environ.get("DAYFLOW_SECURE_COOKIES") == "1",
+                                max_age=28800, path="/")
+            return {k: row[k] for k in ("id", "email", "name", "role", "employee_id")} | {"csrf": csrf}
+
+    # Demo convenience, off unless DAYFLOW_DEMO_SWITCH=1: signed-in users can hop between the two demo
+    # accounts without signing out. Only these ids can be reached, and every switch is audited.
+    DEMO_ACCOUNTS = ("avery", "e004")  # the manager and the employee used in the demo
+
+    def demo_enabled():
+        return os.environ.get("DAYFLOW_DEMO_SWITCH") == "1"
+
+    @app.get("/api/demo/accounts")
+    def demo_accounts(user=Depends(current_user), svc=Depends(service)):
+        if not demo_enabled():
+            return {"enabled": False, "accounts": []}
+        with svc.db.connect() as cx:
+            rows = [cx.execute("SELECT id,name,role FROM users WHERE id=?", (i,)).fetchone() for i in DEMO_ACCOUNTS]
+        label = {"reviewer": "Administrator", "employee": "Employee"}
+        return {"enabled": True, "accounts": [
+            {"id": r["id"], "name": r["name"], "role": r["role"],
+             "label": label[r["role"]],
+             "current": r["id"] == user["id"]} for r in rows if r]}
+
+    @app.post("/api/demo/switch")
+    def demo_switch(payload: DemoSwitch, request: Request, response: Response, user=Depends(current_user),
+                    svc=Depends(service)):
+        if not demo_enabled():
+            fail("User switching is not enabled", 403)
+        if payload.user_id not in DEMO_ACCOUNTS:
+            fail("That account cannot be switched to", 403)
+        with svc.db.transaction() as cx:
+            row = cx.execute("SELECT * FROM users WHERE id=?", (payload.user_id,)).fetchone()
+            if not row:
+                fail("Account not found", 404)
+            cx.execute("DELETE FROM sessions WHERE token_hash=?", (
+                hashlib.sha256(request.cookies["dayflow_session"].encode()).hexdigest(),))
+            token, csrf = uid("session-"), uid("csrf-")
+            cx.execute("INSERT INTO sessions VALUES(?,?,?,?)", (
+                hashlib.sha256(token.encode()).hexdigest(), row["id"], csrf,
+                (datetime.now(timezone.utc) + timedelta(hours=8)).isoformat()))
+            audit(cx, row["id"], "demo_user_switched", row["id"], {"from": user["id"], "to": row["id"]})
             response.set_cookie("dayflow_session", token, httponly=True, samesite="strict",
                                 secure=os.environ.get("DAYFLOW_SECURE_COOKIES") == "1",
                                 max_age=28800, path="/")

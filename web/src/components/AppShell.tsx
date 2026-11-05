@@ -17,6 +17,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { RoleSwitch } from "@/components/dayflow/RoleSwitch";
 import { useMe } from "@/lib/attendance";
 import { cn } from "@/lib/utils";
 import campus from "@/assets/dashboard-campus.jpg";
@@ -173,6 +174,7 @@ export function AppShell({ user, title, actions, children }: { user: User; title
               <CalendarDays className="h-3.5 w-3.5 text-primary" /> {today}
             </span>
             {actions}
+            <RoleSwitch />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative rounded-full" aria-label="Notifications">

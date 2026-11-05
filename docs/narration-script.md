@@ -12,15 +12,18 @@ a "simplified mock policy, not legal advice".
    ```bash
    # terminal 1, repo root
    export DAYFLOW_LLM_MODE=ollama DAYFLOW_LLM_MODEL=qwen3:1.7b
-   export DAYFLOW_LLM_CACHE=evidence/llm-cache.json DAYFLOW_DB=/tmp/dayflow-demo-$(date +%s).sqlite3
+   export DAYFLOW_LLM_CACHE=evidence/llm-cache.json DAYFLOW_DEMO_SWITCH=1
+   export DAYFLOW_DB=/tmp/dayflow-demo-$(date +%s).sqlite3
    .venv/bin/python -m uvicorn app.main:app --app-dir backend --port 8000
    # terminal 2
    cd web && npm ci && npm run dev        # open the URL Vite prints
    ```
    The `$(date +%s)` gives a **new** database every rehearsal, so the ruleset starts unsigned and the
    queue is empty. Say in the video that the AI answers are replayed from a recorded run.
-2. Open two browser windows (or profiles): one for **Avery** (reviewer), one for **Alex
-   Rivera** (`e004@dayflow.demo`, employee). Password for all: `Dayflow-demo-2026!`.
+2. One browser window is enough. Sign in once as **Avery** (`avery@dayflow.demo`, password
+   `Dayflow-demo-2026!`). The **View as: Manager | Employee** toggle in the top bar switches to Alex
+   Rivera (the employee) and back in one click, with no sign-out. It only appears because the backend was
+   started with `DAYFLOW_DEMO_SWITCH=1` (included above).
 3. As Avery, leave everything else untouched. The AI is switched on later, on the Resolution Queue page.
 
 ---
@@ -151,7 +154,7 @@ and it's on the record."
 
 ## 6. The employee answers in one tap (5:15 – 6:30)
 
-**[DO]** Switch to Alex's window. open **Questions for You** in the sidebar.
+**[DO]** Click **Employee** in the **View as** toggle. The page jumps to **Questions for You**.
 
 **SAY:**
 "Now I'm Alex. Instead of a manager chasing me, I get one question: *'You wrote "I finished
@@ -160,7 +163,7 @@ at 17:50". We set your clock-out on Wednesday to 17:50. Is that right?'* I tap y
 **[DO]** Click **Yes, that's right**. (Alternative: type a different time and click **Use
 this time** to show a correction.)
 
-**[DO]** Switch back to Avery. **Resolution Queue**: Alex is now in *Ready to approve*.
+**[DO]** Click **Manager** in the toggle. Open **Resolution Queue**: Alex is now in *Ready to approve*.
 Click **Approve**.
 
 **SAY:**

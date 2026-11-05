@@ -82,6 +82,12 @@ export const auth = {
     emit(user);
     return user;
   },
+  /** Demo only: the accounts one click away (empty unless the backend sets DAYFLOW_DEMO_SWITCH=1). */
+  demoAccounts: () => get<{ enabled: boolean; accounts: { id: string; name: string; role: "reviewer" | "employee"; label: string; current: boolean }[] }>("/demo/accounts"),
+  async switchTo(userId: string) {
+    emit(await request<T.SessionUser>("POST", "/demo/switch", { user_id: userId }));
+    return session!;
+  },
   async logout() {
     try { await request("POST", "/logout", {}); } finally { emit(null); }
   },

@@ -133,7 +133,7 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <MotionConfig reducedMotion="user">
         <Outlet />
-        <Toaster theme="dark" richColors position="top-right" />
+        <Toaster theme="dark" richColors position="bottom-right" />
       </MotionConfig>
     </QueryClientProvider>
   );
