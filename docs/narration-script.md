@@ -147,9 +147,9 @@ for the scheduling team; it never rewrites a schedule by itself."
 **SAY:**
 "Everything in this lane changes nobody's hours. One click. For each one the system
 creates the correction, re-verifies the full pay period and commits it. The agent wrote
-the plans but is not allowed to approve, and neither is the manager who started the run.
-Taylor is a different person, so the approval is hers, and it's on the record. Three roles:
-the agent proposes, the manager runs it, an independent person approves."
+the plans but is not allowed to approve. Taylor, a second administrator, approves, so the person
+who ran the agent is not the one who signs it off, and it's on the record. Three people: the manager runs
+the agent, a second administrator approves, the employee confirms their own hours."
 
 ---
 

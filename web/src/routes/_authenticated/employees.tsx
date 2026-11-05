@@ -100,7 +100,7 @@ function EmployeesPage() {
           {rows.length ? (
             <div className="overflow-x-auto">
               <Table>
-                <TableHeader><TableRow><TableHead>Employee ID</TableHead><TableHead>Name</TableHead><TableHead>Department</TableHead><TableHead>Designation</TableHead><TableHead>Status</TableHead><TableHead>Check in / out</TableHead><TableHead>Role</TableHead><TableHead>Active</TableHead><TableHead /></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Employee ID</TableHead><TableHead>Name</TableHead><TableHead>Department</TableHead><TableHead>Status</TableHead><TableHead>Check in / out</TableHead><TableHead>Role</TableHead><TableHead>Active</TableHead><TableHead /></TableRow></TableHeader>
                 <TableBody>
                   {rows.map((e) => (
                     <TableRow key={e.id}>
@@ -115,7 +115,6 @@ function EmployeesPage() {
                         </div>
                       </TableCell>
                       <TableCell>{e.department ?? "—"}</TableCell>
-                      <TableCell className="text-muted-foreground">—</TableCell>
                       <TableCell><span className={cn("whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium", tone[e.status])}>{e.status}</span></TableCell>
                       <TableCell className="whitespace-nowrap text-sm tabular-nums">{e.today ? `${fmtTime(e.today.check_in_time)} – ${fmtTime(e.today.check_out_time)}` : "—"}</TableCell>
                       <TableCell>

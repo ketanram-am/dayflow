@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2, LogIn, LogOut, Coffee, Play, WifiOff, RefreshCw, Trash2, MapPin } from "lucide-react";
-import { wf } from "@/lib/api";
+import { auth, wf } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle, StatusPill } from "@/components/AppShell";
 import {
@@ -37,12 +37,24 @@ export function GeoPulsePanel({ userId }: { userId: string }) {
   const [fix, setFix] = useState<GeoFix | null>(null);
   const { data: me } = useMe(userId);
   const { data: office } = useOfficeSettings();
+  const demo = useQuery({ queryKey: ["demo-accounts"], queryFn: auth.demoAccounts, retry: false });
   const unconfigured = office ? office.latitude == null || office.longitude == null : false;
   useEffect(() => {
     const l = lastVerify();
     setVerify(l?.result ?? null);
     setFix(l?.fix ?? null);
   }, []);
+
+  async function resetDay() {
+    try {
+      await auth.demoResetDay();
+      toast.success("Today's attendance was cleared. You can check in again.");
+      qc.invalidateQueries({ queryKey: ["today", userId] });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not reset");
+    }
+  }
 
   async function setOfficeHere() {
     setBusy("office");
@@ -149,6 +161,11 @@ export function GeoPulsePanel({ userId }: { userId: string }) {
       <p className="mt-3 text-xs text-muted-foreground">
         {done ? `Day complete — checked out at ${fmtTime(today?.check_out_time)}.` : checkedIn ? `Checked in at ${fmtTime(today?.check_in_time)}.` : "Your location is read once when you press Check in, and verified against the office area."}
       </p>
+      {demo.data?.enabled && (checkedIn || done) && (
+        <Button type="button" variant="ghost" size="sm" className="mt-2 h-7 px-2 text-xs text-muted-foreground" onClick={resetDay}>
+          <RefreshCw className="mr-1 h-3 w-3" /> Demo: reset my day
+        </Button>
+      )}
       {checkedIn && (
         <div className="mt-5 flex items-center justify-between rounded-xl border p-4">
           <div className="flex items-center gap-3">

@@ -346,3 +346,18 @@ def test_demo_switch_is_off_by_default_and_limited_to_three_audited_accounts(tmp
         client.post("/api/login", json={"email": "avery@dayflow.demo", "password": "Dayflow-demo-2026!"}).json()
         events = client.get("/api/audit").json()["events"]
         assert any(e["action"] == "demo_user_switched" and e["details"]["to"] == "e004" for e in events)
+
+
+def test_demo_reset_day_clears_only_my_attendance_and_only_in_demo_mode(tmp_path, monkeypatch):
+    monkeypatch.delenv("DAYFLOW_DEMO_SWITCH", raising=False)
+    with TestClient(create_app(tmp_path / "r.sqlite3")) as client:
+        login = client.post("/api/login", json={"email": "e004@dayflow.demo", "password": "Dayflow-demo-2026!"}).json()
+        h = {"x-csrf-token": login["csrf"]}
+        assert client.post("/api/demo/reset-day", json={}, headers=h).status_code == 403
+        monkeypatch.setenv("DAYFLOW_DEMO_SWITCH", "1")
+        client.get("/api/wf/me")                                            # seeds the demo fortnight
+        before = len(client.get("/api/wf/attendance?limit=500").json())
+        out = client.post("/api/demo/reset-day", json={}, headers=h).json()
+        after = len(client.get("/api/wf/attendance?limit=500").json())
+        assert out["status"] == "reset" and after == before - out["records"]
+        assert client.post("/api/demo/reset-day", json={}).status_code == 403   # CSRF still applies

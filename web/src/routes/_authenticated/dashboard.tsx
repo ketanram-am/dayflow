@@ -265,9 +265,6 @@ function Dashboard() {
             </h2>
             <p className="text-xs text-muted-foreground">Here’s your workforce intelligence for today</p>
           </div>
-          {!me?.employee?.employee_id && me && (
-            <Link to="/profile" className="relative self-start rounded-lg bg-card/95 px-2 py-1 text-xs text-warning hover:underline sm:self-center">Add your employee ID in Profile →</Link>
-          )}
         </div>
       </Fade>
 

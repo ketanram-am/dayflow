@@ -84,6 +84,8 @@ export const auth = {
   },
   /** Demo only: the accounts one click away (empty unless the backend sets DAYFLOW_DEMO_SWITCH=1). */
   demoAccounts: () => get<{ enabled: boolean; accounts: { id: string; name: string; role: "reviewer" | "employee"; label: string; current: boolean }[] }>("/demo/accounts"),
+  /** Demo only: forget my own attendance for today so check-in can be shown again. */
+  demoResetDay: () => request<{ status: string; records: number }>("POST", "/demo/reset-day", {}),
   async switchTo(userId: string) {
     emit(await request<T.SessionUser>("POST", "/demo/switch", { user_id: userId }));
     return session!;

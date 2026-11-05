@@ -198,6 +198,21 @@ def create_app(database_path=None):
              "label": "Second approver" if r["id"] == "taylor" else label[r["role"]],
              "current": r["id"] == user["id"]} for r in rows if r]}
 
+    @app.post("/api/demo/reset-day")
+    def demo_reset_day(user=Depends(current_user), svc=Depends(service)):
+        """Demo only: forget my own attendance for today so the check-in can be shown again."""
+        if not demo_enabled():
+            fail("Resetting the day is not enabled", 403)
+        today = datetime.now(timezone.utc).date().isoformat()
+        with svc.db.transaction() as cx:
+            ids = [r["id"] for r in cx.execute(
+                "SELECT id FROM attendance WHERE employee_id=? AND attendance_date=?", (user["id"], today))]
+            for identity in ids:
+                cx.execute("DELETE FROM breaks WHERE attendance_id=?", (identity,))
+                cx.execute("DELETE FROM attendance WHERE id=?", (identity,))
+            audit(cx, user["id"], "demo_day_reset", user["id"], {"date": today, "records": len(ids)})
+        return {"status": "reset", "records": len(ids)}
+
     @app.post("/api/demo/switch")
     def demo_switch(payload: DemoSwitch, request: Request, response: Response, user=Depends(current_user),
                     svc=Depends(service)):
