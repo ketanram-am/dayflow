@@ -158,7 +158,7 @@ class Provider:
                 return _CACHE[key]
             except (ValidationError, ProviderFailure):
                 pass
-        reason = None
+        reason = last_reason = None
         for attempt in range(2):
             messages = [
                 {"role": "system", "content": instruction},
@@ -197,9 +197,22 @@ class Provider:
                 # Provider bodies can contain credentials or untrusted content; never log them.
                 # Only our own validator messages are safe to record; others log the type.
                 reason = str(exc) if isinstance(exc, ProviderFailure) else type(exc).__name__
+                if isinstance(exc, httpx.HTTPStatusError):
+                    status = exc.response.status_code
+                    reason = f"provider returned HTTP {status}"
+                    if status in (401, 403):  # retrying cannot help; say so plainly
+                        raise ProviderFailure(
+                            f"The AI provider rejected the API key (HTTP {status}); "
+                            "it may be expired or revoked") from exc
+                    if status == 429:
+                        reason = "provider rate limit (HTTP 429)"
+                elif isinstance(exc, httpx.HTTPError):
+                    reason = "provider unreachable"
+                last_reason = reason
                 if trace is not None:
                     trace.append({"step": "model", "attempt": attempt + 1, "ok": False,
                                   "error": reason})
                 logger.warning("Structured provider operation failed: schema=%s attempt=%s "
                                "reason=%s", schema.__name__, attempt + 1, reason)
-        raise ProviderFailure("Structured output failed after one retry; manual review required")
+        raise ProviderFailure(
+            f"Structured output failed after one retry ({last_reason}); manual review required")

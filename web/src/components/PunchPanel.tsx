@@ -6,27 +6,33 @@ import { auth, wf } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle, StatusPill } from "@/components/AppShell";
 import {
-  enqueuePunch, flushQueue, fmtTime, getPosition, lastVerify, punch, PunchError, readQueue, useMe, useOfficeSettings, useToday, verifyLocation, writeQueue,
+  enqueuePunch, flushQueue, fmtTime, getPosition, isNetworkError, isOnline, lastVerify, punch, setSimOffline, PunchError, readQueue, useMe, useOfficeSettings, useToday, verifyLocation, writeQueue,
   type GeoFix, type QueuedPunch, type VerifyResult,
 } from "@/lib/attendance";
-
-function isNetworkError(e: unknown) {
-  return !navigator.onLine || /fetch|network/i.test(e instanceof Error ? e.message : String(e));
-}
 
 export function useQueue() {
   const [q, setQ] = useState<QueuedPunch[]>([]);
   const [online, setOnline] = useState(true);
   useEffect(() => {
     const up = () => setQ(readQueue());
-    const net = () => setOnline(navigator.onLine);
+    const net = () => setOnline(isOnline());
     up(); net();
     window.addEventListener("df-queue", up);
+    window.addEventListener("df-net", net);
     window.addEventListener("online", net);
     window.addEventListener("offline", net);
-    return () => { window.removeEventListener("df-queue", up); window.removeEventListener("online", net); window.removeEventListener("offline", net); };
+    return () => { window.removeEventListener("df-queue", up); window.removeEventListener("df-net", net); window.removeEventListener("online", net); window.removeEventListener("offline", net); };
   }, []);
   return { q, online };
+}
+
+export function SimulateOffline() {
+  const { online } = useQueue();
+  return (
+    <Button size="sm" variant={online ? "outline" : "secondary"} onClick={() => setSimOffline(online)}>
+      <WifiOff className="mr-1.5 h-3.5 w-3.5" />{online ? "Simulate offline" : "Go back online"}
+    </Button>
+  );
 }
 
 export function GeoPulsePanel({ userId }: { userId: string }) {
@@ -78,8 +84,15 @@ export function GeoPulsePanel({ userId }: { userId: string }) {
   async function doPunch(kind: "check_in" | "check_out") {
     setBusy(kind);
     try {
-      const fix = await getPosition();
-      if (!navigator.onLine) {
+      let fix: GeoFix;
+      try {
+        fix = await getPosition();
+      } catch (err) {
+        const cached = lastVerify()?.fix;
+        if (!isOnline() && cached) fix = { ...cached, at: Date.now() };
+        else throw err;
+      }
+      if (!isOnline()) {
         enqueuePunch(kind, fix);
         toast.info("You're offline. Punch saved and will sync when you reconnect.");
         return;
@@ -219,7 +232,7 @@ export function SyncShieldPanel() {
 
   return (
     <Card>
-      <CardTitle icon={WifiOff} title="SyncShield" hint="Offline punches are kept on this device until synced" right={<span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${online ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>{online ? "Online" : "Offline"}</span>} />
+      <CardTitle icon={WifiOff} title="SyncShield" hint="Offline punches are kept on this device until synced" right={<span className="flex items-center gap-2"><SimulateOffline /><span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${online ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>{online ? "Online" : "Offline"}</span></span>} />
       {q.length === 0 ? (
         <p className="text-sm text-muted-foreground">No queued punches. If you lose connection while punching, it will be saved here and synced automatically.</p>
       ) : (

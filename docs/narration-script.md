@@ -11,7 +11,7 @@ a "simplified mock policy, not legal advice".
 1. Start the backend with the recorded model answers (no model server needed), then the web app:
    ```bash
    # terminal 1, repo root
-   export DAYFLOW_LLM_MODE=ollama DAYFLOW_LLM_MODEL=qwen3:1.7b
+   export DAYFLOW_LLM_MODE=ollama DAYFLOW_LLM_MODEL=qwen3:8b
    export DAYFLOW_LLM_CACHE=evidence/llm-cache.json DAYFLOW_DEMO_SWITCH=1
    export DAYFLOW_DB=/tmp/dayflow-demo-$(date +%s).sqlite3
    .venv/bin/python -m uvicorn app.main:app --app-dir backend --port 8000
@@ -253,7 +253,7 @@ corrections, proves every one with a pay engine, and sends each card to the righ
 | How do you stop made-up times? | Code requires a sentence in the note that states that exact time, and the pay engine re-checks the result. Measured: 0 invented times. |
 | Why is a missed meal break "paid", not fixed? | Moving punches to avoid a premium is time-shaving. The compliant fix is to pay the premium, which the engine already includes. |
 | Why do employees confirm? | Any change to worked time needs the employee's confirmation of that exact proposal. |
-| Which model? | Open-weight qwen3:1.7b (Apache-2.0) locally via Ollama; any OpenAI-compatible endpoint works. Always check the model's licence and acceptable-use terms. |
+| Which model? | Open-weight qwen3:8b (Apache-2.0) locally via Ollama; any OpenAI-compatible endpoint works. Always check the model's licence and acceptable-use terms. |
 | What if the AI is off or down? | The rules plan still covers everything; only note-dependent answers lose accuracy (89% → 32%). |
 | What's new compared with Dayforce or UKG? | Detection and approval routing exist. The new part is turning the employee's own explanation into a grounded correction, proving it before anyone sees it, and publishing the measured comparison. |
 

@@ -10,7 +10,7 @@ the video), **STRONG** (add if time allows) or **EXTRA** (skip first). The 10-mi
 
 ```bash
 # terminal 1, repo root
-export DAYFLOW_LLM_MODE=ollama DAYFLOW_LLM_MODEL=qwen3:1.7b
+export DAYFLOW_LLM_MODE=ollama DAYFLOW_LLM_MODEL=qwen3:8b   # 1.7b is too small to answer reliably
 export DAYFLOW_LLM_CACHE=evidence/llm-cache.json DAYFLOW_DEMO_SWITCH=1
 export DAYFLOW_DB=/tmp/dayflow-demo-$(date +%s).sqlite3
 .venv/bin/python -m uvicorn app.main:app --app-dir backend --port 8000
@@ -18,6 +18,8 @@ export DAYFLOW_DB=/tmp/dayflow-demo-$(date +%s).sqlite3
 cd web && npm ci && npm run dev          # open the URL Vite prints
 ```
 
+- Ollama must be running with `qwen3:8b` (`ollama pull qwen3:8b`). The AI answers need it; there is no API key.
+- After signing in, **Manager** → Resolution Queue → switch **AI** on once (the assistants share this switch).
 - `$(date +%s)` gives a brand-new database every time, so every take starts identical (use this to retake).
 - `DAYFLOW_DEMO_SWITCH=1` shows the **View as: Manager | Approver | Employee** toggle in the top bar. It is
   what lets you play three people from one browser window.
@@ -43,6 +45,10 @@ All of it is **synthetic**. There are two kinds of data:
 2. **Live workforce data** (generated relative to *today* when the database is created): 14 days of attendance
    history for most people, 3 weeks of weekday shifts, 5 leave requests (2 pending, 2 approved, 1 rejected),
    6 tasks, holidays, and a few people given a Saturday shift so the **Overtime** page has something to flag.
+   In demo mode (`DAYFLOW_DEMO_SWITCH=1`) the database also gets a **believable today**: about 8 present, 4 late,
+   2 on break, 3 checked out, 3 on leave, 2 outside the geofence, a few not started and a few absent (times are
+   relative to the clock, so it looks right whenever you record), plus a **rota with two pending swaps, one
+   understaffed day and one leave clash**.
    This feeds **GeoPulse, ZenBreak, SyncShield, RotaFlow, LeaveSync, TaskForge, Overtime, People, Reports**.
 
 The two sides share one backend, one login and one audit log.
@@ -118,36 +124,36 @@ the page cannot cheat it. Check-out closes any open break automatically."
 
 ## 4. SyncShield: offline punches that do not get lost (STRONG, 1 min 15 s)
 
-1. As **Employee**, press **Demo: reset my day**.
-2. Chrome DevTools → **Network** tab → set throttling to **Offline**.
-3. Press **Check in**. Toast: "You're offline. Punch saved and will sync when you reconnect."
-   The SyncShield card shows the item "Pending sync".
-4. Set the network back to **No throttling**. It syncs automatically: "1 punch(es) synced".
-5. Sidebar → **SyncShield**: stat cards, **Smart Offline Queue**, **Sync History & Audit Trail** with the attempt.
-6. Toggle **Manager** → **SyncShield** → **Conflict Resolution Centre** → **Scan records**. Toast "Attendance
-   records scanned: n new conflict(s)". Use **Approve correction** or **Reject** on one.
+| Do | Say |
+|---|---|
+| Toggle **Employee**. GeoPulse → **Demo: reset my day**. | "Alex is about to punch in with no network." |
+| On the SyncShield card press **Simulate offline** (the badge turns **Offline**). No DevTools needed. | "Dayflow knows it is offline." |
+| Press **Check in**. Toast: "You're offline. Punch saved and will sync when you reconnect." | "The punch is saved on the device with its real timestamp." |
+| Sidebar → **SyncShield**. **Pending Records: 1**, the item is in **Smart Offline Queue** as *Pending*. | "One record is waiting, nothing is lost." |
+| Press **Go back online**. Toast "1 record synchronized". | "On reconnect it replays automatically." |
+| Scroll to **Sync History & Audit Trail**: the success row with the original captured time. Press **Sync Now** again: "nothing to sync". | "Each punch has a unique id, so a retry can never create a duplicate. Late punches are only accepted within 12 hours." |
+| Toggle **Manager** → SyncShield → **Conflict Resolution Centre** → **Scan records**; **Approve correction** on one. | "A manager sees and decides every conflict." |
 
-**Say:** "The punch keeps its original timestamp and a unique ID. If the app retries, the server recognises the ID,
-so you never get duplicate records. Delayed punches are only accepted within 12 hours."
-
-**Proof:** the history row shows the real captured time; pressing **Sync Now** again says nothing new to sync.
+**Notes:** the queue lives in this browser for the signed-in person, so punch and go online as the same toggle
+person. Real browser Offline (DevTools) works too.
 
 ---
 
-## 5. RotaFlow: shifts and swaps that respect leave (STRONG, 1 min 30 s)
+## 5. RotaFlow: shifts and swaps that respect leave (STRONG, 2 min)
 
-1. As **Manager** → **RotaFlow**. Show the weekly calendar and KPI tiles.
-2. **Assign shifts** card: choose an employee, a date, times, **Save shift** → "Shift saved".
-3. **Prove the rule:** first approve some leave for that person (chapter 6), then try to save a shift on the
-   leave day. It is refused: "{name} has approved leave on {date}; the shift was not saved".
-4. Toggle **Employee** → **RotaFlow** → in **Upcoming Shifts** press **Swap** on a shift, choose a colleague, give a
-   reason, **Send request** ("Swap request sent").
-5. Toggle **Approver** (or **Manager**) → **RotaFlow** → **Swap Requests**: press the green **Approve** icon. The
-   shift moves to the colleague. If the request was "Anyone available" you must pick a colleague first.
+The demo data already contains the story, so you only click.
 
-**Say:** "The overlap and leave checks run on the server at save time, so a browser trick cannot bypass them."
+| Do | Say |
+|---|---|
+| Toggle **Manager** → **RotaFlow**. Point at the calendar and the tiles (**Conflicts: 1**). | "The rota for the next weeks. One conflict is flagged." |
+| **AI Shift Optimizer** → **Analyse**. It names the understaffed weekday (8 of 30 scheduled). | "It reads the schedule and finds the gap. Every number comes from the database." |
+| In **AI Shift Assistant** ask: *Which swap requests are pending?* then *Where are the staffing gaps?* | "Ask a question and it answers from the records, not with a canned text." |
+| **Swap Requests**: **Alex Rivera → Leila Morgan, Saturday, "Family event"**. Toggle **Approver** (Taylor) and press the green **Approve**. | "Taylor, not the requester, approves; the shift moves to Leila." |
+| Still in Swap Requests: **Maya Chen, "Anyone available", "Dentist appointment"**. Pick **Nina Patel** in the dropdown, then **Approve**. | "For an open request the manager chooses the colleague." |
+| Toggle **Employee** (Alex) → **Upcoming Shifts**: the second Saturday has a **Swap** button. Choose **Leila Morgan**, reason "Wedding", **Send request**. | "Employees ask in two clicks." |
+| **Prove the rule:** as Manager assign a shift to **Sofia Reyes** on a day she has approved leave (the flagged clash). It is refused with the reason. | "The leave check runs on the server, so no browser trick bypasses it." |
 
-**Proof:** try approving a swap whose target already has a shift that day: refused with the reason.
+If a swap is refused with "already has a shift", that colleague works that day: pick Leila or Nina.
 
 ---
 
@@ -246,8 +252,9 @@ each with a different actor.
    exceptions. Search a name, click a row.
 2. Show **Shifts vs schedule** (a missing punch is marked "missing") and **Pay lines**. Click a line to expand the
    formula and sources, with the policy clause chip.
-3. In **Ask about this paycheck** type "Why was I paid overtime?" → **Ask**. The answer shows its source
-   (rules or model) and a notice.
+3. In **Ask about this paycheck** type "Did the employee miss any day?" → **Ask**. Then "Why is my total this
+   amount?". The answer is worded by the model and every number is checked against the engine's trace. With the
+   AI off you get the engine's own derivation (one bullet per week, units pluralised, flagged exceptions listed).
 
 **Say:** "Nothing is a black box. Each line says quantity × rate and cites the clause. The explainer may only use
 numbers that exist in the engine's derivation; otherwise the engine's own explanation is shown."
@@ -284,12 +291,29 @@ recorded model run; schedule and leave changes remain recommendations for a pers
 
 ---
 
-## 14. People and Reports (EXTRA, 30 s)
+## 14. People and Reports (EXTRA, 45 s)
 
-**People** (type in the top search box and press Enter): directory with department, status (Present / Late /
-Checked Out / On Leave / Absent, decided on the server), role and active switch; **Records** opens an employee's
-check-ins. **Reports** (open `/reports` in the address bar): date range, **Daily attendance**, **By employee**,
-**Export CSV**.
+| Do | Say |
+|---|---|
+| **People**. Point at the stacked **Today at a glance** bar and its legend. | "Status is decided on the server: present, late, on break, checked out, on leave, outside the geofence, not started, absent." |
+| Show the stat tiles (Working now / Absent / On Leave) and filter by department. | "Right now eight are working, four late, two on break." |
+| Press **Records** on a person. | "Every check-in and its location status." |
+| Open `/reports` in the address bar: date range, **Daily attendance**, **By employee**, **Export CSV**. | "And a report for payroll." |
+
+---
+
+## AI assistants (use inside chapters 3, 5, 7, 11)
+
+Each module has an assistant. Ask these; each answers from computed facts and says so when it cannot answer.
+
+| Module | Ask | Expect |
+|---|---|---|
+| ZenBreak / GeoPulse | "How many hours have I worked today?" | Net time and breaks today (or "no check-in today") |
+| RotaFlow | "Where are the staffing gaps?" / "Which swap requests are pending?" | The understaffed day; names of the two pending swaps |
+| TaskForge | "Who has overdue or urgent tasks?" | Task titles with assignees and due dates |
+| Any | "What is the weather?" | "I can't answer that from the saved records" (the refusal is the proof) |
+
+The chip on the assistant shows **AI on** or **AI off · rule-based**. Turn the AI on in Resolution Queue first.
 
 ---
 

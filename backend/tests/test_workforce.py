@@ -361,3 +361,85 @@ def test_demo_reset_day_clears_only_my_attendance_and_only_in_demo_mode(tmp_path
         after = len(client.get("/api/wf/attendance?limit=500").json())
         assert out["status"] == "reset" and after == before - out["records"]
         assert client.post("/api/demo/reset-day", json={}).status_code == 403   # CSRF still applies
+
+
+# ---------------------------------------------------------------- demo data and assistants
+def demo_workforce(service, monkeypatch, at=datetime(2026, 11, 5, 12, 17, tzinfo=timezone.utc)):
+    monkeypatch.setenv("DAYFLOW_DEMO_SWITCH", "1")
+    return Workforce(service, Clock(at))
+
+
+def test_demo_today_shows_every_status_and_is_idempotent(service, users, monkeypatch):
+    wf = demo_workforce(service, monkeypatch)
+    from collections import Counter
+    first = Counter(r["status"] for r in wf.employee_overview(users["avery"]))
+    assert {"Present", "Late", "On Break", "Checked Out", "On Leave", "Outside Geofence", "Absent"} <= set(first)
+    assert Workforce(service, wf.clock).employee_overview(users["avery"]) is not None
+    assert Counter(r["status"] for r in wf.employee_overview(users["avery"])) == first
+    alex = next(r for r in wf.employee_overview(users["avery"]) if r["id"] == "e004")
+    assert alex["attendance"] is None  # the demo employee can still check in
+
+
+def test_demo_rota_has_swaps_a_gap_and_a_conflict(service, users, monkeypatch):
+    wf = demo_workforce(service, monkeypatch)
+    swaps = [s for s in wf.swaps(users["avery"]) if s["status"] == "pending"]
+    assert {(s["requester_id"], s["target_employee_id"]) for s in swaps} == {("e004", "e007"), ("e001", None)}
+    from app import wf_insights
+
+    class Off:
+        mode = "off"
+
+    text = wf_insights.answer(wf, Off(), users["avery"], "shifts")["text"]
+    assert "understaffed" in text
+
+
+def test_assistant_answers_the_question_not_a_generic_summary(service, users, monkeypatch):
+    from app import wf_insights
+
+    class Off:
+        mode = "off"
+
+    wf = demo_workforce(service, monkeypatch)
+    swaps = wf_insights.answer(wf, Off(), users["avery"], "shifts", "Which swap requests are pending?")["text"]
+    assert "Alex Rivera asks to swap" in swaps and "anyone available" in swaps
+    unknown = wf_insights.answer(wf, Off(), users["avery"], "tasks", "What is the weather?")["text"]
+    assert unknown.startswith("I can't answer that")
+    today = wf_insights.answer(wf, Off(), users["avery"], "wellness", "How many hours have I worked today?")["text"]
+    assert "No check-in is recorded for you today" in today
+
+
+def test_demo_data_is_off_without_the_demo_flag(service, users, monkeypatch):
+    monkeypatch.delenv("DAYFLOW_DEMO_SWITCH", raising=False)
+    wf = Workforce(service, Clock())
+    assert not [s for s in wf.swaps(users["avery"]) if s["status"] == "pending"]
+
+
+def test_paycheck_template_is_grammatical_and_labels_weeks():
+    from app.ai_features import template_explanation
+    pay = {"status": "complete", "total": "1824.80", "reasons": [], "exceptions": [],
+           "lines": [{"id": f"2026-10-{d}:regular", "week": f"2026-10-{d}", "label": "Worked time", "quantity": "40",
+                      "unit": "hour", "rate": "22.81", "amount": "912.40", "clause": "DF-002"} for d in ("05", "12")]}
+    text = template_explanation(pay).text
+    assert "40 hours" in text and "40 hour " not in text
+    assert "Week of 2026-10-05" in text and "Week of 2026-10-12" in text
+    assert "No exceptions are flagged" in text
+
+
+def test_provider_rejected_key_is_reported_plainly(monkeypatch):
+    import httpx
+    from app.agent import Provider, ProviderFailure
+    from app.domain import Model
+
+    class Out(Model):
+        text: str
+
+    monkeypatch.setenv("DAYFLOW_LLM_MODE", "openai")
+    monkeypatch.setenv("DAYFLOW_LLM_API_KEY", "expired")
+    monkeypatch.setenv("DAYFLOW_LLM_CACHE", "")
+
+    def fake_post(url, **kw):
+        return httpx.Response(401, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    with pytest.raises(ProviderFailure, match="rejected the API key"):
+        Provider().extract(Out, "x", {"unique": "no-cache-hit-401"})

@@ -1,7 +1,9 @@
 import { useState, type ComponentType, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import { Bot, Loader2, RefreshCw, Send, Sparkles as Spark } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { wf } from "@/lib/api";
+import { dayflow } from "@/lib/dayflow";
 import type { AssistantReply } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,6 +78,18 @@ export function AIInsightsCard({ module, title, clientData, className }: { modul
   );
 }
 
+function AiState() {
+  const { data } = useQuery({ queryKey: ["ai-config"], queryFn: dayflow.config, retry: false, staleTime: 30_000 });
+  if (!data) return null;
+  const on = data.llm_enabled && data.llm_configured;
+  return (
+    <span className={cn("ml-auto rounded-full px-2 py-0.5 text-[11px] font-medium", on ? "bg-success/15 text-success" : "bg-muted text-muted-foreground")}
+      title={on ? `Model ${data.model ?? ""} words answers; numbers are verified in code` : "AI model is off: answers come from rule-based findings computed on your records"}>
+      {on ? "AI on" : "AI off · rule-based"}
+    </span>
+  );
+}
+
 /** Conversational assistant; history is kept for this page visit only. */
 export function AIAssistant({ module, title, suggestions, clientData }: { module: Mod; title: string; suggestions: string[]; clientData?: string }) {
   const [msgs, setMsgs] = useState<{ role: "user" | "assistant"; content: string; error?: boolean; note?: string }[]>([]);
@@ -98,6 +112,7 @@ export function AIAssistant({ module, title, suggestions, clientData }: { module
       <div className="mb-3 flex items-center gap-2">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 text-primary"><Bot className="h-4 w-4" /></div>
         <h3 className="font-display text-sm font-semibold text-foreground">{title}</h3>
+        <AiState />
       </div>
       <div className="max-h-80 space-y-3 overflow-y-auto">
         {!msgs.length && (

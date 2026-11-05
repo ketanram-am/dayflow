@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
 import math
+import os
 import random
 
 from .db import audit, now as stamp, uid
@@ -95,6 +96,8 @@ class Workforce:
         self.db = service.db
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.seed()
+        if os.environ.get("DAYFLOW_DEMO_SWITCH") == "1":
+            self.seed_demo()
 
     # ------------------------------------------------------------------ people
     def today(self):
@@ -148,23 +151,40 @@ class Workforce:
                 AND start_date<=? AND end_date>=?""", (day, day))}
             shifts = {r["employee_id"]: r["shift_start"] for r in cx.execute(
                 "SELECT employee_id,shift_start FROM shift_schedules WHERE assigned_date=?", (day,))}
+            on_break = {r["employee_id"] for r in cx.execute(
+                "SELECT b.employee_id FROM breaks b JOIN attendance a ON a.id=b.attendance_id "
+                "WHERE b.break_end IS NULL AND a.attendance_date=?", (day,))}
+            outside = {r["employee_id"] for r in cx.execute(
+                "SELECT employee_id FROM location_logs WHERE geofence_status!='inside' AND substr(recorded_at,1,10)=?",
+                (day,))}
+            now = f"{self.clock():%H:%M}" if day == self.today() else None
             for person in self.employees(user):
-                row = attendance.get(person["id"])
-                out.append({**person, "attendance": row, "on_leave": person["id"] in on_leave,
-                            "shift_start": shifts.get(person["id"]),
-                            "status": self._status(row, person["id"] in on_leave, shifts.get(person["id"]))})
+                pid = person["id"]
+                row = attendance.get(pid)
+                out.append({**person, "attendance": row, "on_leave": pid in on_leave,
+                            "shift_start": shifts.get(pid),
+                            "status": self._status(row, pid in on_leave, shifts.get(pid),
+                                                   on_break=pid in on_break, outside=pid in outside, now=now)})
         return out
 
     @staticmethod
-    def _status(attendance, on_leave, shift_start):
-        """Present / Late / Checked Out / On Leave / Absent, decided on the server in UTC."""
+    def _status(attendance, on_leave, shift_start, on_break=False, outside=False, now=None):
+        """Present / Late / On Break / Checked Out / On Leave / Outside Geofence / Not Started / Absent (UTC)."""
         if attendance:
             if attendance["check_out_time"]:
                 return "Checked Out"
+            if on_break:
+                return "On Break"
             clock_in = _dt(attendance["check_in_time"])
             limit = (shift_start or WORKDAY_START)[:5]
             return "Late" if f"{clock_in:%H:%M}" > limit else "Present"
-        return "On Leave" if on_leave else "Absent"
+        if on_leave:
+            return "On Leave"
+        if outside:
+            return "Outside Geofence"
+        if now and shift_start and now < shift_start[:5]:
+            return "Not Started"
+        return "Absent"
 
     def update_employee(self, user, target_id, changes):
         """Admins manage activation and role; anyone edits their own display name."""
@@ -922,6 +942,141 @@ class Workforce:
             return [dict(r) for r in cx.execute(
                 "SELECT attendance_date,total_working_hours FROM attendance WHERE employee_id=? AND attendance_date>? "
                 "ORDER BY attendance_date", (user["id"], (today - timedelta(days=days)).isoformat()))]
+
+    # ---------------------------------------------------------------- demo data
+    def seed_demo(self):
+        """Demo mode only: a believable today (every status) and a rota with swaps and a staffing gap.
+
+        Idempotent per day, relative to the clock, and never touches the payroll roster.
+        """
+        now = self.clock()
+        today = now.date()
+        key = f"demo_data:{today.isoformat()}"
+        midnight = datetime.combine(today, time(0, 5), timezone.utc)
+        if now < midnight + timedelta(minutes=30):
+            return
+        with self.db.transaction() as cx:
+            if cx.execute("SELECT 1 FROM meta WHERE key=?", (key,)).fetchone():
+                return
+            people = [r["id"] for r in cx.execute(
+                "SELECT id FROM users WHERE role='employee' AND id!=? ORDER BY id", (AGENT_ID,))]
+            if len(people) < 20:
+                cx.execute("INSERT INTO meta VALUES(?,'1')", (key,))
+                return
+            approver = (cx.execute("SELECT id FROM users WHERE role='reviewer' AND id!=? ORDER BY id LIMIT 1",
+                                   (AGENT_ID,)).fetchone() or {"id": None})["id"]
+            self._seed_today(cx, people, now, today)
+            self._seed_rota(cx, people, today, approver)
+            cx.execute("INSERT INTO meta VALUES(?,'1')", (key,))
+
+    def _seed_today(self, cx, people, now, today):
+        day = today.isoformat()
+        cx.execute("DELETE FROM breaks WHERE attendance_id IN (SELECT id FROM attendance WHERE attendance_date=?)", (day,))
+        cx.execute("DELETE FROM attendance WHERE attendance_date=?", (day,))
+        cx.execute("DELETE FROM location_logs WHERE substr(recorded_at,1,10)=?", (day,))
+        cx.execute("DELETE FROM leave_requests WHERE start_date<=? AND end_date>=? AND reason='Out today'", (day, day))
+        order = [p for p in people if p != "e004"]
+        plan = (["present"] * 8 + ["late"] * 4 + ["checked_out"] * 3 + ["on_break"] * 2 + ["on_leave"] * 2
+                + ["outside"] * 2 + ["not_started"] * 4 + ["absent"] * 4)
+        rng = random.Random(today.toordinal())
+        rng.shuffle(plan)
+        floor = datetime.combine(today, time(0, 2), timezone.utc)
+
+        def hhmm(moment):
+            return f"{moment:%H:%M}"
+
+        def set_shift(person, start):
+            cx.execute("UPDATE shift_schedules SET shift_start=?,shift_end=? WHERE employee_id=? AND assigned_date=?",
+                       (hhmm(start), hhmm(start + timedelta(hours=8)), person, day))
+
+        def check_in(person, start, end=None, rest_start=None):
+            aid = uid("att-")
+            hours = round((((end or now) - start).total_seconds() / 60 - (20 if end else 0)) / 60, 2) if end else None
+            cx.execute("""INSERT INTO attendance(id,employee_id,attendance_date,check_in_time,check_out_time,location_status,
+                       total_working_hours,synced_offline,server_received_at,created_at) VALUES(?,?,?,?,?,'inside',?,0,?,?)""",
+                       (aid, person, day, start.isoformat(), end.isoformat() if end else None, hours,
+                        start.isoformat(), stamp()))
+            if end:
+                cx.execute("INSERT INTO breaks VALUES(?,?,?,?,?)", (uid("brk-"), aid, person,
+                           (start + timedelta(hours=1)).isoformat(), (start + timedelta(hours=1, minutes=20)).isoformat()))
+            if rest_start:
+                cx.execute("INSERT INTO breaks VALUES(?,?,?,?,NULL)", (uid("brk-"), aid, person, rest_start.isoformat()))
+
+        # Alex (the demo employee) is on time and has not checked in yet.
+        set_shift("e004", max(floor, now - timedelta(minutes=10)).replace(second=0, microsecond=0))
+        for person, kind in zip(order, plan):
+            slot = max(floor, now - timedelta(hours=3 + rng.randint(0, 40) / 20)).replace(second=0, microsecond=0)
+            if kind in ("present", "on_break", "checked_out"):
+                set_shift(person, slot)
+                check_in(person, max(floor, slot - timedelta(minutes=rng.randint(2, 6))),
+                         end=now - timedelta(minutes=20) if kind == "checked_out" else None,
+                         rest_start=now - timedelta(minutes=12) if kind == "on_break" else None)
+            elif kind == "late":
+                set_shift(person, slot)
+                late_in = min(now - timedelta(minutes=5), slot + timedelta(minutes=rng.randint(25, 55)))
+                check_in(person, late_in)
+            elif kind == "on_leave":
+                set_shift(person, slot)
+                cx.execute("""INSERT INTO leave_requests(id,employee_id,leave_type,start_date,end_date,reason,approval_status,
+                           reviewed_at,created_at) VALUES(?,?,?,?,?,?,'approved',?,?)""",
+                           (uid("lv-"), person, "sick" if rng.random() < .5 else "annual", day, day,
+                            "Out today", stamp(), stamp()))
+            elif kind == "outside":
+                set_shift(person, slot)
+                cx.execute("""INSERT INTO location_logs(id,employee_id,latitude,longitude,accuracy,distance_m,purpose,
+                           geofence_status,recorded_at) VALUES(?,?,?,?,?,?,?,'outside',?)""",
+                           (uid("loc-"), person, 0.0, 0.0, 12.0, 4200.0, "check_in", (now - timedelta(minutes=8)).isoformat()))
+                set_shift(person, slot)
+            elif kind == "not_started":
+                set_shift(person, now + timedelta(minutes=rng.randint(45, 150)))
+            else:  # absent: shift started two hours ago, nothing recorded
+                set_shift(person, max(floor, now - timedelta(hours=2)))
+
+    def _seed_rota(self, cx, people, today, approver):
+        def shift(person, d, start="09:00", end="16:00"):
+            cx.execute("DELETE FROM shift_swap_requests WHERE shift_id IN (SELECT id FROM shift_schedules "
+                       "WHERE employee_id=? AND assigned_date=?)", (person, d.isoformat()))
+            cx.execute("DELETE FROM shift_schedules WHERE employee_id=? AND assigned_date=?", (person, d.isoformat()))
+            sid = uid("shf-")
+            cx.execute("INSERT INTO shift_schedules VALUES(?,?,?,?,?,?)", (sid, person, d.isoformat(), start, end, stamp()))
+            return sid
+
+        def free(person, d):
+            cx.execute("DELETE FROM shift_swap_requests WHERE shift_id IN (SELECT id FROM shift_schedules "
+                       "WHERE employee_id=? AND assigned_date=?)", (person, d.isoformat()))
+            cx.execute("DELETE FROM shift_schedules WHERE employee_id=? AND assigned_date=?", (person, d.isoformat()))
+
+        sat = today + timedelta(days=(5 - today.weekday()) % 7 or 7)
+        sat2 = sat + timedelta(days=7)
+        cx.execute("DELETE FROM shift_swap_requests WHERE status='pending'")
+        for person in ("e011", "e007"):  # Nina and Leila are free on both Saturdays
+            free(person, sat)
+            free(person, sat2)
+        alex, maya = shift("e004", sat), shift("e001", sat)
+        shift("e004", sat2)
+        for sid, who, target, reason in ((alex, "e004", "e007", "Family event"),
+                                         (maya, "e001", None, "Dentist appointment")):
+            cx.execute("INSERT INTO shift_swap_requests VALUES(?,?,?,?,?,'pending',NULL,?)",
+                       (uid("swp-"), sid, who, target, reason, stamp()))
+        # One understaffed weekday: only eight people scheduled.
+        gap = today + timedelta(days=2)
+        while gap.weekday() >= 5:
+            gap += timedelta(days=1)
+        keep = [p for p in people if p not in ("e004", "e001")][:8]
+        placeholders = ",".join("?" * len(keep))
+        cx.execute(f"DELETE FROM shift_schedules WHERE assigned_date=? AND employee_id NOT IN ({placeholders}) "
+                   "AND id NOT IN (SELECT shift_id FROM shift_swap_requests)", (gap.isoformat(), *keep))
+        # Sofia is rostered the day before the gap but has approved leave: a visible conflict.
+        clash = today + timedelta(days=1)
+        while clash.weekday() >= 5 or clash == gap:
+            clash += timedelta(days=1)
+        if cx.execute("SELECT 1 FROM shift_schedules WHERE employee_id='e013' AND assigned_date=?", (clash.isoformat(),)).fetchone() is None:
+            shift("e013", clash, "09:00", "17:00")
+        cx.execute("DELETE FROM leave_requests WHERE employee_id='e013' AND reason='Clinic visit'")
+        cx.execute("""INSERT INTO leave_requests(id,employee_id,leave_type,start_date,end_date,reason,approval_status,
+                   reviewed_by,reviewed_at,created_at) VALUES(?,?,?,?,?,?,'approved',?,?,?)""",
+                   (uid("lv-"), "e013", "sick", clash.isoformat(), clash.isoformat(), "Clinic visit",
+                    approver, stamp(), stamp()))
 
     # --------------------------------------------------------------------- seed
     def seed(self):
