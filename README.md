@@ -1,32 +1,19 @@
-# Dayflow Frontend
+# Dayflow web app
 
-Create a minimal starter project named Dayflow Frontend.
+The Lovable-built web interface (GeoPulse, RotaFlow, ZenBreak, SyncShield, TaskForge, LeaveSync)
+running on Dayflow's FastAPI backend. One backend, one database, one audit chain.
 
-I will import an existing React frontend codebase from my GitHub repository.
+```bash
+# terminal 1: backend (from the repo root, see the main README for setup)
+.venv/bin/python -m uvicorn app.main:app --app-dir backend --port 8000
 
-Do not build a new application.
-Do not add unnecessary features.
-Keep the starter project simple and clean.
-
-I will replace the starter code with my existing Dayflow frontend.
-
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/713107b9-474e-4df9-bd88-c37cb532ecc8).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+# terminal 2: this UI
+cd web && npm ci && npm run dev      # open the URL Vite prints; /api is proxied to :8000
+DAYFLOW_API=http://127.0.0.1:8020 npm run dev    # point the proxy at another backend port
 ```
+
+Sign in with `avery@dayflow.demo` (administrator) or `e004@dayflow.demo` (employee); password
+`Dayflow-demo-2026!`. Set the office location once in Settings (admin) before anyone can check in.
+
+Not yet in this UI (the Dayflow screens still live in `../frontend`): resolution queue, policy studio,
+pay explorer, overtime planner, what-if, audit ledger and eval scorecard.
