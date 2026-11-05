@@ -15,6 +15,7 @@ import random
 from .db import audit, now as stamp, uid
 from .services import AGENT_ID, fail, reviewer
 
+WORKDAY_START = "09:30"  # check-ins after this (UTC) count as late when no shift is assigned
 SYNC_PAST = timedelta(hours=12)
 SYNC_FUTURE = timedelta(minutes=2)
 LEAVE_ALLOWANCE = {"annual": "annual_days", "personal": "casual_days", "sick": "sick_days",
@@ -148,10 +149,22 @@ class Workforce:
             shifts = {r["employee_id"]: r["shift_start"] for r in cx.execute(
                 "SELECT employee_id,shift_start FROM shift_schedules WHERE assigned_date=?", (day,))}
             for person in self.employees(user):
-                out.append({**person, "attendance": attendance.get(person["id"]),
-                            "on_leave": person["id"] in on_leave,
-                            "shift_start": shifts.get(person["id"])})
+                row = attendance.get(person["id"])
+                out.append({**person, "attendance": row, "on_leave": person["id"] in on_leave,
+                            "shift_start": shifts.get(person["id"]),
+                            "status": self._status(row, person["id"] in on_leave, shifts.get(person["id"]))})
         return out
+
+    @staticmethod
+    def _status(attendance, on_leave, shift_start):
+        """Present / Late / Checked Out / On Leave / Absent, decided on the server in UTC."""
+        if attendance:
+            if attendance["check_out_time"]:
+                return "Checked Out"
+            clock_in = _dt(attendance["check_in_time"])
+            limit = (shift_start or WORKDAY_START)[:5]
+            return "Late" if f"{clock_in:%H:%M}" > limit else "Present"
+        return "On Leave" if on_leave else "Absent"
 
     def update_employee(self, user, target_id, changes):
         """Admins manage activation and role; anyone edits their own display name."""
@@ -498,7 +511,7 @@ class Workforce:
         try:
             date.fromisoformat(day)
         except ValueError:
-            fail("Date must look like 2026-11-09", 422)
+            fail("Date must look like YYYY-MM-DD", 422)
         if end <= start:
             fail("The shift must end after it starts", 422)
         with self.db.transaction() as cx:
@@ -646,7 +659,7 @@ class Workforce:
         try:
             date.fromisoformat(day)
         except ValueError:
-            fail("Date must look like 2026-12-25", 422)
+            fail("Date must look like YYYY-MM-DD", 422)
         with self.db.transaction() as cx:
             if cx.execute("SELECT 1 FROM holidays WHERE holiday_date=?", (day,)).fetchone():
                 fail("That date is already a holiday")
@@ -704,7 +717,7 @@ class Workforce:
         try:
             first, last = date.fromisoformat(start), date.fromisoformat(end)
         except ValueError:
-            fail("Dates must look like 2026-11-12", 422)
+            fail("Dates must look like YYYY-MM-DD", 422)
         if last < first:
             fail("End date must be on or after start date", 422)
         if first.year != last.year:
@@ -924,6 +937,8 @@ class Workforce:
             for row in cx.execute("SELECT id FROM users WHERE id!=?", (AGENT_ID,)).fetchall():
                 cx.execute("INSERT OR IGNORE INTO profiles(user_id,department,is_active,created_at) VALUES(?,?,1,?)",
                            (row["id"], departments.get(row["id"], "Operations"), stamp()))
+            approver = (cx.execute("SELECT id FROM users WHERE role='reviewer' AND id!=? ORDER BY id LIMIT 1",
+                                   (AGENT_ID,)).fetchone() or {"id": None})["id"]
             if len(people) < 6:  # too small for the demo fortnight; profiles are enough
                 cx.execute("INSERT INTO meta VALUES('workforce_seed','1')")
                 return
@@ -976,8 +991,11 @@ class Workforce:
             for person in non_exempt[7:13]:
                 cx.execute("DELETE FROM shift_schedules WHERE employee_id=? AND assigned_date=?",
                            (person, (monday + timedelta(days=4)).isoformat()))
-            for h_date, name in (("2026-11-26", "Thanksgiving"), ("2026-12-25", "Christmas Day")):
-                cx.execute("INSERT OR IGNORE INTO holidays VALUES(?,?,?)", (uid("hol-"), h_date, name))
+            for year in (today.year, today.year + 1):  # US fixed-rule holidays, computed rather than hard-coded
+                nov1 = date(year, 11, 1)
+                thanksgiving = nov1 + timedelta(days=(3 - nov1.weekday()) % 7 + 21)  # fourth Thursday of November
+                for h_date, name in ((thanksgiving, "Thanksgiving"), (date(year, 12, 25), "Christmas Day")):
+                    cx.execute("INSERT OR IGNORE INTO holidays VALUES(?,?,?)", (uid("hol-"), h_date.isoformat(), name))
             demo_leave = [
                 (people[1], "annual", 3, 4, "approved", "Family trip"),
                 (people[2], "sick", 0, 0, "approved", "Flu"),
@@ -990,17 +1008,17 @@ class Workforce:
                 cx.execute("""INSERT INTO leave_requests(id,employee_id,leave_type,start_date,end_date,reason,approval_status,
                            reviewed_by,reviewed_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",
                            (uid("lv-"), person, kind, first.isoformat(), last.isoformat(), reason, status,
-                            "avery" if status != "pending" else None, stamp() if status != "pending" else None, stamp()))
+                            approver if status != "pending" else None, stamp() if status != "pending" else None, stamp()))
             for i, (title, project, tag, priority, status, offset) in enumerate((
                     ("Prepare weekly QA report", "Quality", "Report", "high", "in_progress", 3),
                     ("Review October timecard exceptions", "Payroll", "Review", "high", "todo", 2),
                     ("Update onboarding checklist", "People", "Docs", "medium", "todo", 6),
                     ("Audit geofence radius at main office", "Facilities", "Audit", "medium", "review", 4),
-                    ("Close pay period 2026-10-19", "Payroll", "Close", "high", "todo", 5),
+                    ("Close the current pay period", "Payroll", "Close", "high", "todo", 5),
                     ("Refresh shift swap policy", "People", "Policy", "low", "completed", -1))):
                 cx.execute("""INSERT INTO tasks(id,title,project,tag,priority,status,progress,assignee_id,due_date,created_by,created_at)
                            VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                            (uid("tsk-"), title, project, tag, priority, status,
                             100 if status == "completed" else 40 if status == "in_progress" else 0,
-                            people[i % len(people)], (today + timedelta(days=offset)).isoformat(), "avery", stamp()))
+                            people[i % len(people)], (today + timedelta(days=offset)).isoformat(), approver, stamp()))
             cx.execute("INSERT INTO meta VALUES('workforce_seed','1')")

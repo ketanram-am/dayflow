@@ -374,24 +374,6 @@ dl.source-details dd { margin: 0; font-size: 12px; }
 .employee-note { grid-column: 1 / -1; }
 .employee-note blockquote { margin: 4px 0 0; padding: 8px 12px; border-left: 2px solid var(--sky-400); background: var(--surface); font-size: 13px; color: var(--ink-2); }
 
-/* AI investigation */
-.investigation-intro { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px; align-items: start; }
-.investigation-intro p { color: var(--ink-2); font-size: 13px; margin-top: 4px; max-width: 560px; }
-ol.gate-rail { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); counter-reset: gate; }
-ol.gate-rail li { position: relative; padding: 18px 12px 0 0; display: grid; gap: 2px; counter-increment: gate; }
-ol.gate-rail li::before { content: ""; position: absolute; top: 5px; left: 12px; right: 0; height: 2px; background: var(--line); }
-ol.gate-rail li::after { content: ""; position: absolute; top: 0; left: 0; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #c3cbdb; background: var(--surface); }
-ol.gate-rail li:last-child::before { display: none; }
-ol.gate-rail li.pass::after { border-color: var(--green); background: var(--green); box-shadow: inset 0 0 0 2px #fff; }
-ol.gate-rail li.pass::before { background: var(--green); opacity: .4; }
-ol.gate-rail li.fail::after { border-color: var(--red); background: var(--red); box-shadow: inset 0 0 0 2px #fff; }
-ol.gate-rail strong { font-size: 12px; }
-ol.gate-rail span { font-size: 11px; color: var(--ink-3); line-height: 1.35; }
-.investigation-result { display: grid; gap: 14px; border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 18px 20px; }
-.mode { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--ink-3); }
-.brief { font-size: 15px; line-height: 1.6; color: var(--ink); max-width: 70ch; }
-.critic { display: grid; gap: 4px; padding: 10px 14px; border-radius: var(--radius); background: var(--green-bg); color: #0b4d37; font-size: 13px; }
-.critic.flagged { background: var(--red-bg); color: #7d1622; }
 
 /* Steps */
 ol.steps { list-style: none; margin: 0; padding: 0; display: flex; gap: 0; counter-reset: step; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }

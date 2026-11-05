@@ -3,7 +3,11 @@ export type Employee = {
   id: string; employee_id: string | null; full_name: string; email: string; profile_image: string | null;
   role: "admin" | "employee"; is_active: boolean; department: string | null; created_at: string;
 };
-export type EmployeeOverview = Employee & { attendance: Attendance | null; on_leave: boolean; shift_start: string | null };
+export type AttStatus = "Present" | "Absent" | "Late" | "Checked Out" | "On Leave";
+/** `status` is decided on the server (UTC, shift start or the workday default); the browser only displays it. */
+export type EmployeeOverview = Employee & {
+  attendance: Attendance | null; on_leave: boolean; shift_start: string | null; status: AttStatus;
+};
 export type OfficeSettings = {
   id: 1; office_name: string; latitude: number | null; longitude: number | null;
   radius_m: number; max_accuracy_m: number; break_reminder_min: number;

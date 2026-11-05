@@ -65,10 +65,6 @@ CREATE TABLE IF NOT EXISTS dispute_resolutions(
  dispute_id TEXT PRIMARY KEY REFERENCES disputes(id), actor TEXT NOT NULL REFERENCES users(id),
  reason TEXT NOT NULL, created_at TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS investigations(
- id TEXT PRIMARY KEY, card_id TEXT REFERENCES cards(id), actor TEXT NOT NULL,
- result TEXT NOT NULL, at TEXT NOT NULL
-);
 CREATE TABLE IF NOT EXISTS agent_runs(
  id TEXT PRIMARY KEY, started_by TEXT NOT NULL REFERENCES users(id), mode TEXT NOT NULL,
  model TEXT, status TEXT NOT NULL CHECK(status IN ('running','finished','failed')),

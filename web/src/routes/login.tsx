@@ -63,10 +63,13 @@ function Login() {
           </div>
           {err && <p role="alert" className="text-sm text-destructive">{err}</p>}
           <Button type="submit" className="w-full" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</Button>
-          <p className="flex items-start gap-2 text-xs text-muted-foreground">
-            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            Demo accounts: avery@dayflow.demo (administrator) or e004@dayflow.demo (employee). Synthetic data only.
-          </p>
+          {import.meta.env["VITE_SHOW_DEMO_HINT"] !== "0" && (
+            <p className="flex items-start gap-2 text-xs text-muted-foreground">
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              Demo accounts: avery@dayflow.demo (administrator) or e004@dayflow.demo (employee). Synthetic data only.
+              Set VITE_SHOW_DEMO_HINT=0 to hide this line.
+            </p>
+          )}
         </form>
       </div>
       <div className="relative hidden lg:block">

@@ -306,3 +306,15 @@ def test_colleagues_see_that_someone_is_away_but_not_why(wf, users):
     assert seen and seen[0]["leave_type"] == "other"
     assert [r["leave_type"] for r in wf.team_calendar(users["avery"], "2026-12-01", "2026-12-31")
             if r["employee_id"] == "e010"] == ["sick"]
+
+
+def test_overview_status_is_decided_on_the_server(wf, users):
+    rows = {r["id"]: r for r in wf.employee_overview(users["avery"])}
+    assert {r["status"] for r in rows.values()} <= {"Present", "Late", "Checked Out", "On Leave", "Absent"}
+    status = wf._status
+    assert status(None, False, None) == "Absent" and status(None, True, None) == "On Leave"
+    out = {"check_in_time": "2026-11-04T11:00:00+00:00", "check_out_time": "2026-11-04T18:00:00+00:00"}
+    assert status(out, False, None) == "Checked Out"
+    live = {"check_in_time": "2026-11-04T09:10:00+00:00", "check_out_time": None}
+    assert status(live, False, "09:00:00") == "Late" and status(live, False, "09:30:00") == "Present"
+    assert status({**live, "check_in_time": "2026-11-04T09:45:00+00:00"}, False, None) == "Late"   # default 09:30
