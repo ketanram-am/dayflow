@@ -39,7 +39,6 @@ export function Pill({ children, tone = "muted" }: { children: ReactNode; tone?:
 }
 
 export const mins = (m?: number | null) => (m == null ? "—" : `${m} min`);
-export const money = (v: unknown) => (v == null || v === "" ? "—" : `$${Number(v).toFixed(2)}`);
 export const when = (s?: string | null) => (s ? new Date(s).toLocaleString() : "—");
 export const label = (k: string) => k.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 

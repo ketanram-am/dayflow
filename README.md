@@ -214,7 +214,7 @@ Pydantic, HTTPX, Uvicorn, React, Vite, TypeScript, motion, Lucide.
 
 - [Five-slide presentation](docs/deck.html)
 - [Demo runbook](docs/demo.md) and [word-for-word narration](docs/narration-script.md)
-- [Frontend handoff](docs/frontend-handoff.md) and [Lovable prompts + improvement list](docs/lovable-prompt.md)
+- [Frontend notes](docs/frontend-handoff.md) and [improvement list](docs/improvements.md)
 - **Demo video: pending recording.** Add the URL here before submission.
 
 ## Limits

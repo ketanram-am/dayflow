@@ -35,7 +35,6 @@ function Page() {
 
 function Queue() {
   const qc = useQueryClient();
-  const [useAi, setUseAi] = useState(false);
   const [open, setOpen] = useState<Resolution | null>(null);
   const config = useQuery({ queryKey: ["dayflow", "config"], queryFn: dayflow.config });
   const list = useQuery({ queryKey: ["dayflow", "resolutions"], queryFn: dayflow.resolutions });
@@ -54,7 +53,14 @@ function Queue() {
     }
   }, [run, qc]);
   const refresh = () => qc.invalidateQueries({ queryKey: ["dayflow"] });
-  const start = useMutation({ mutationFn: () => dayflow.startRun(useAi), onSuccess: refresh, onError: (e: Error) => toast.error(e.message) });
+  // The switch is the server-side "AI on" flag, so the run really uses the model (and the audit log shows who turned it on).
+  const aiOn = !!config.data?.llm_enabled && !!config.data?.llm_configured;
+  const toggleAi = useMutation({
+    mutationFn: (enabled: boolean) => dayflow.setAi(enabled),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["dayflow", "config"] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const start = useMutation({ mutationFn: () => dayflow.startRun(aiOn), onSuccess: refresh, onError: (e: Error) => toast.error(e.message) });
   const ready = useMutation({
     mutationFn: dayflow.approveReady,
     onSuccess: (r) => { toast.success(`${r.approved} approved, ${r.blocked} blocked`); refresh(); },
@@ -72,7 +78,7 @@ function Queue() {
         </div>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 text-sm" title={aiAvailable ? undefined : "No AI model is configured on the server"}>
-            <Switch checked={useAi && aiAvailable} onCheckedChange={setUseAi} disabled={!aiAvailable} aria-label="Use AI to read employee notes" />
+            <Switch checked={aiOn} onCheckedChange={(v) => toggleAi.mutate(v)} disabled={!aiAvailable || toggleAi.isPending} aria-label="Use AI to read employee notes" />
             Use AI to read employee notes
           </label>
           <Button onClick={() => start.mutate()} disabled={start.isPending || run?.status === "running"}><Play className="mr-1 h-4 w-4" />Run agent</Button>

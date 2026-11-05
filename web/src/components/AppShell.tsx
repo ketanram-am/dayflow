@@ -126,7 +126,7 @@ export function AppShell({ user, title, actions, children }: { user: User; title
     qc.clear();
     sessionStorage.removeItem("df_last_verify");
     await auth.logout();
-    navigate({ to: "/dashboard", replace: true });
+    navigate({ to: "/login", replace: true });
   }
 
   return (
