@@ -39,6 +39,11 @@ jobs:
         run: |
           .venv/bin/python -m app.evals
           cat artifacts/scorecard.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Resolution agent scorecard (rules-only in CI; real-model run is in evidence/)
+        run: |
+          .venv/bin/python -m app.agent_eval --output artifacts/agent_scorecard.json
+          echo '### Recorded real-model run' >> "$GITHUB_STEP_SUMMARY"
+          python3 -c "import json;d=json.load(open('evidence/agent_scorecard.json'));print('```json');print(json.dumps(d['ai'],indent=1));print('```')" >> "$GITHUB_STEP_SUMMARY"
       - name: Install Chromium
         working-directory: frontend
         run: npx playwright install --with-deps chromium
@@ -50,6 +55,7 @@ jobs:
           name: dayflow-evidence
           path: |
             artifacts/scorecard.*
+            artifacts/agent_scorecard.json
             artifacts/dayflow-*.png
             frontend/test-results/
           if-no-files-found: warn

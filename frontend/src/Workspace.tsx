@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowRight, MessageSquare, Plus, X } from "lucide-react";
 import { api, type Correction, type Detail, type Edit, type Pay, type Proposal, type User } from "./api";
 import { currency, duration, friendly, initials, period, type Run } from "./App";
-import { ExplainChat, InjectionLab, UnsafeFixDemo } from "./AiPanels";
+import { ExplainChat } from "./AiPanels";
 
 function useModalFocus(active: boolean, close: () => void) {
   const ref = useRef<HTMLElement>(null);
@@ -262,18 +262,6 @@ function ProposalReview({ proposal, user, run, busy }: { proposal: Proposal; use
   </section>;
 }
 
-function GateRail({ investigation }: { investigation?: Detail["investigations"][number]["result"] }) {
-  const gates: [string, string, "pass" | "fail" | "wait"][] = [
-    ["Critic", investigation ? (investigation.critic.safe ? "Note screened" : "Override flagged") : "Screens the employee note", investigation ? (investigation.critic.safe ? "pass" : "fail") : "wait"],
-    ["Schema", investigation ? (investigation.correction ? "Draft validated" : "No draft returned") : "Validates strict JSON", investigation ? (investigation.correction ? "pass" : "wait") : "wait"],
-    ["Engine", "Recomputes the full period", "wait"],
-    ["Human", "Second reviewer approves", "wait"],
-  ];
-  return <ol className="gate-rail" aria-label="Checks between a suggestion and payroll">
-    {gates.map(([name, text, state]) => <li key={name} className={state}><strong>{name}</strong><span>{text}</span></li>)}
-  </ol>;
-}
-
 export default function Workspace({ detail, user, run, page, busy, onPolicy }: {
   detail: Detail; user: User; run: Run; page: string; busy: boolean; onPolicy: () => void;
 }) {
@@ -287,10 +275,9 @@ export default function Workspace({ detail, user, run, page, busy, onPolicy }: {
   const { card, pay } = detail;
   const zone = card.employee.timezone;
   const proposal = detail.proposals.find(p => p.id === proposalId) || detail.proposals[0];
-  const investigation = detail.investigations[0]?.result;
   const reviewer = user.role === "reviewer";
   const tabs: [string, string, number?][] = [
-    ["evidence", "Evidence", pay.exceptions.length], ...(reviewer ? [["ai", "AI investigation"] as [string, string]] : []),
+    ["evidence", "Evidence", pay.exceptions.length],
     ["correction", "Correction & proof", detail.proposals.length], ["pay", "Pay derivation"],
   ];
   return <section className="detail">
@@ -318,21 +305,8 @@ export default function Workspace({ detail, user, run, page, busy, onPolicy }: {
               <div><dt>References</dt><dd><code>schedule:{s.id}</code>{actual && <code>shift:{actual.id}</code>}</dd></div></dl></details>;
         })}</div>
         {card.shifts.filter(w => !card.schedules.some(s => s.id === w.id)).map(w => <div className="info-box" key={w.id}>Unscheduled: {timeLabel(w.start, zone)} → {timeLabel(w.end, zone)} <code>{w.id}</code></div>)}
-        <div className="employee-note"><span className="label">EMPLOYEE NOTE · UNTRUSTED INPUT</span><blockquote>{card.note}</blockquote><small>Context, not a command or proof of time worked.</small></div>
-        <button className="button primary" onClick={() => { setTab(reviewer ? "ai" : "correction"); }}>{reviewer ? "Investigate this timecard" : "Review corrections"}<ArrowRight size={15} /></button>
-      </>}
-      {tab === "ai" && <>
-        <div className="investigation-intro"><div><h3>Investigate</h3>
-          <p>The investigator reads the source records and the cited clauses, then drafts a correction. It cannot calculate pay, approve, or write to payroll.</p></div>
-          <button className="button primary" disabled={busy} onClick={() => run(() => api(`/cards/${card.id}/investigate`, "POST"), "Investigation recorded in the audit ledger.")}>{busy ? "Investigating…" : "Run investigation"}</button></div>
-        <GateRail investigation={investigation} />
-        {investigation && <div className="investigation-result"><div className="section-heading"><span className="badge neutral">{friendly(investigation.status)}</span><span className="mode">{investigation.mode === "off" ? "No-LLM fallback" : "Model-assisted"}</span></div>
-          <h3>Investigation brief</h3><p className="brief">{investigation.summary}</p><div className="citation-row">{investigation.clauses.map(c => <button className="citation" key={c} onClick={onPolicy}>{c}</button>)}</div>
-          <div className={`critic ${investigation.critic.safe ? "" : "flagged"}`}><strong>{investigation.critic.safe ? "Critic: no override detected" : "Critic: instruction override flagged"}</strong><p>{investigation.critic.reason}</p></div>
-          <small className="muted">Pattern screening is not a security guarantee. The verifier and approval boundary remain mandatory.</small>
-          {investigation.correction && <button className="button secondary" onClick={() => setDraft(investigation.correction)}>Inspect suggested correction</button>}</div>}
-        <InjectionLab />
-        <button className="text-button" onClick={() => { setDraft(null); setTab("correction"); }}>Continue with a manual proposal</button>
+        <div className="employee-note"><span className="label">Employee note</span><blockquote>{card.note}</blockquote><small>For context only. Not proof of time worked.</small></div>
+        <button className="button primary" onClick={() => setTab("correction")}>Review corrections<ArrowRight size={15} /></button>
       </>}
       {tab === "correction" && <>
         <div className="section-heading"><h3>Proposals</h3><button className="button secondary small" onClick={() => setDraft(null)}><Plus size={14} />Draft correction</button></div>
@@ -342,7 +316,6 @@ export default function Workspace({ detail, user, run, page, busy, onPolicy }: {
           {proposal && <ProposalReview key={proposal.id} proposal={proposal} user={user} run={run} busy={busy} />}
         </> : <div className="empty"><h3>No correction proposed yet</h3><p>Start from the source records. Drafting a proposal never changes the timecard.</p><button className="button primary" onClick={() => setDraft(null)}>Draft the first correction</button></div>}
       </>}
-      {tab === "correction" && reviewer && <UnsafeFixDemo cardId={card.id} run={run} busy={busy} />}
       {tab === "pay" && <>
         <ExplainChat cardId={card.id} onCite={reviewer ? undefined : id => setDisputeLine(id)} />
         <TraceTable pay={pay} onDispute={!reviewer ? id => setDisputeLine(id) : undefined} />

@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Search } from "lucide-react";
 import {
-  api, type AuditEvent, type PolicyDocument, type PolicyResponse, type Scorecard, type User,
+  api, type AgentScore, type AuditEvent, type PolicyDocument, type PolicyResponse, type Scorecard, type User,
 } from "./api";
 import { friendly, type Run } from "./App";
-import { ExtractPanel, ReplayPanel } from "./AiPanels";
+import { WhatIfPanel } from "./AiPanels";
 
 export function PolicyStudio({ data, user, run, busy }: {
   data: PolicyResponse | null; user: User; run: Run; busy: boolean;
@@ -43,10 +43,7 @@ export function PolicyStudio({ data, user, run, busy }: {
       <label>Versioned source document<textarea className="figure" spellCheck={false} value={source} onChange={e => setSource(e.target.value)} required /></label>
       <button className="button primary" disabled={busy}>Validate & compile draft</button>
     </form>}
-    {user.role === "reviewer" && <ExtractPanel busy={busy} onLoad={document => {
-      setSource(JSON.stringify(document, null, 2)); setEditing(true);
-    }} />}
-    {user.role === "reviewer" && !active && data?.active_id && <ReplayPanel candidateId={version.id} candidateLabel={version.version} />}
+    {user.role === "reviewer" && <WhatIfPanel run={run} busy={busy} onSaved={id => { setSelected(id); setReviewed(false); }} />}
     <div className="policy-columns">
       <section className="rule-mappings">
         <div className="section-heading"><h3>Parameters</h3><span className="figure">{version.mappings.length} values · {Object.keys(version.document.clauses).length} clauses</span></div>
@@ -132,6 +129,7 @@ export function EvalScorecard({ refresh }: { refresh: number }) {
   return <section className="eval-page">
     <div className="scorecard-intro"><div><h2>Trust is a measured behavior.</h2><p>Detectors run against a held-out synthetic set whose labels were written before the detectors. Model quality is reported separately.</p></div>
       <div className="corpus"><strong className="figure">{data.labelled_exceptions}</strong><span>labelled exceptions</span><small className="figure">{data.employees} employees · {data.periods} periods · seed {data.held_out_seed}</small></div></div>
+    {data.agent && <AgentComparison agent={data.agent} />}
     <table className="score-table"><thead><tr><th>Detector</th><th>Precision <small>TP / (TP + FP)</small></th><th>Recall <small>TP / (TP + FN)</small></th><th className="numeric">TP</th><th className="numeric">FP</th><th className="numeric">FN</th></tr></thead>
       <tbody>{Object.entries(data.detection).map(([family, m]) => <tr key={family}><td>{friendly(family)}</td>
         <td><div className="meter"><div className="metric-bar"><span style={{ width: `${m.precision * 100}%` }} /></div><b className="figure">{(m.precision * 100).toFixed(1)}%</b></div></td>
@@ -153,6 +151,26 @@ export function EvalScorecard({ refresh }: { refresh: number }) {
         <p>{data.provenance}</p><p><strong>Real-model evaluation.</strong> {data.model_evaluation}</p>
         <p className="muted">Synthetic cases do not establish legal compliance, general model robustness or production readiness. {data.disclaimer}</p><code className="figure">python -m app.evals</code>
       </section></div>
+  </section>;
+}
+
+function AgentComparison({ agent }: { agent: NonNullable<Scorecard["agent"]> }) {
+  const rules = agent.rules_only, ai = agent.ai;
+  const rows: [string, (s: AgentScore) => string, string][] = [
+    ["Note-dependent answers correct", s => `${s.note_dependent_accuracy_pct}%`, "Missing punches and missed shifts where the note holds the answer"],
+    ["Right time proposed on first ask", s => `${s.right_time_on_first_ask}`, "Employee only taps Yes"],
+    ["All exceptions resolved correctly", s => `${s.item_accuracy_pct}%`, "Every one of the 155 labelled exceptions"],
+    ["Routed to the right lane", s => `${s.lane_accuracy_pct}%`, "Ready, waiting on employee, or needs judgment"],
+    ["Times invented or misread from notes", s => `${s.invented_or_wrong_from_note}`, "Must be 0"],
+    ["Hostile notes sent to a manager", s => s.hostile_notes_routed_to_manager, "AI never called on them"],
+    ["Plans rejected by the pay engine", s => `${s.verifier_rejected_plans}`, "Caught before anyone saw them"],
+  ];
+  return <section className="agent-compare card"><div className="card-head"><h3>Resolution agent: AI vs rules only</h3>
+    {ai && <span className="engine-chip ai">{ai.model}</span>}</div>
+    <table className="score-table"><thead><tr><th>Measure</th><th className="numeric">Rules only</th><th className="numeric">With AI</th></tr></thead>
+      <tbody>{rows.map(([label, value, hint]) => <tr key={label}><td>{label}<small className="muted"> · {hint}</small></td>
+        <td className="numeric figure">{value(rules)}</td><td className="numeric figure">{ai ? value(ai) : "not run"}</td></tr>)}</tbody></table>
+    <p className="muted">Estimated manager time: {rules.manager_minutes_manual_estimate} min by hand vs {rules.manager_minutes_with_agent_estimate} min with the agent. {agent.assumptions} {agent.scope}</p>
   </section>;
 }
 

@@ -36,10 +36,29 @@ def cached_pay(payload, policy):
     ).model_dump(mode="json")
 
 
+AGENT_ID = "dayflow-agent"
+
+
 class Service:
     def __init__(self, database: Database):
         self.db = database
         self.seed()
+        self.ensure_agent_user()
+
+    def ensure_agent_user(self):
+        """System author for agent proposals. It has no usable password and cannot approve."""
+        with self.db.transaction() as cx:
+            if cx.execute("SELECT 1 FROM users WHERE id=?", (AGENT_ID,)).fetchone():
+                return
+            salt = secrets.token_hex(16)
+            cx.execute("INSERT INTO users VALUES(?,?,?,?,?,?,?)", (
+                AGENT_ID, "agent@dayflow.local", "Dayflow agent", "reviewer", None, salt,
+                password_hash(secrets.token_hex(32), salt)))
+
+    def user(self, identity):
+        with self.db.connect() as cx:
+            row = cx.execute("SELECT * FROM users WHERE id=?", (identity,)).fetchone()
+        return dict(row) if row else None
 
     def seed(self):
         with self.db.transaction() as cx:
@@ -88,7 +107,7 @@ class Service:
     def llm_enabled(self):
         with self.db.connect() as cx:
             row = cx.execute("SELECT value FROM meta WHERE key='llm_enabled'").fetchone()
-        return not row or row["value"] == "1"
+        return bool(row) and row["value"] == "1"  # AI is opt-in: off until a reviewer turns it on
 
     def llm_model(self):
         with self.db.connect() as cx:
@@ -244,7 +263,7 @@ class Service:
                 "card": card.model_dump(mode="json"),
                 "pay": self.pay(card, cards, policy["document"]),
                 "policy_signed": signed, "policy_hash": policy["content_hash"],
-                "proposals": proposals, "disputes": disputes, "investigations": investigations,
+                "proposals": proposals, "disputes": disputes, "summaries": investigations,
             }
 
     def proposal_json(self, cx, row):
@@ -317,6 +336,20 @@ class Service:
             cx.execute("UPDATE proposals SET state='proposed',proof=NULL WHERE id=?", (proposal_id,))
             audit(cx, user["id"], kind, proposal_id, {"reason": reason})
         return {"status": "recorded", "kind": kind}
+
+    def attest_recorded_answer(self, proposal_id, employee_user, answer_id):
+        """Bind an employee's earlier authenticated answer to the proposal created from it."""
+        with self.db.transaction() as cx:
+            row = cx.execute("SELECT * FROM proposals WHERE id=?", (proposal_id,)).fetchone()
+            card = self.card(cx, row["card_id"], employee_user)
+            if employee_user["employee_id"] != card.employee.id:
+                fail("Only the subject employee can confirm worked time", 403)
+            reason = f"Confirmed in the app (answer {answer_id})."
+            cx.execute("INSERT INTO attestations VALUES(?,?,?,?,?,?)",
+                       (uid("att-"), proposal_id, employee_user["id"], "employee_confirmation",
+                        reason, now()))
+            audit(cx, employee_user["id"], "employee_confirmation", proposal_id,
+                  {"reason": reason, "answer_id": answer_id})
 
     def apply_edits(self, target, correction):
         result = target.model_copy(deep=True)
@@ -496,6 +529,8 @@ class Service:
                     fail("Correction was already committed by a different approval")
                 return {"status": "committed", "approval_id": existing["id"], "idempotent": True}
             card = self.card(cx, row["card_id"], user)
+            if user["id"] == AGENT_ID:
+                fail("The agent can propose but never approve", 403)
             if user["id"] == row["author"] or user["employee_id"] == card.employee.id:
                 fail("Self-approval is prohibited; another reviewer must approve", 403)
             if row["state"] != "verified" or not row["proof"]:

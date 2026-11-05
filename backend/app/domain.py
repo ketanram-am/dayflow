@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 DISCLAIMER = "simplified mock policy, not legal advice"
 Money = Annotated[Decimal, Field(ge=0, max_digits=16, decimal_places=6)]
@@ -232,15 +232,3 @@ class Correction(Model):
         if len(set(ids)) != len(ids):
             raise ValueError("Only one operation per shift is allowed")
         return self
-
-
-class Investigation(Model):
-    summary: str = Field(min_length=1, max_length=1200)
-    clauses: list[str] = Field(min_length=1, max_length=11)
-    evidence: list[str] = Field(min_length=1, max_length=30)
-    correction: Correction | None = None
-
-
-class CriticVerdict(Model):
-    safe: StrictBool
-    reason: str = Field(min_length=1, max_length=1000)

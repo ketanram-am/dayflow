@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { Activity, ArrowRight, BrainCircuit, CheckCheck, Cpu, FileSearch, ShieldCheck, Sparkles } from "lucide-react";
-import { api, type AuditEvent, type CardRow, type PolicyResponse, type User } from "./api";
+import { Activity, ArrowRight, BrainCircuit, CalendarClock, CheckCheck, Cpu, FileSearch, ShieldCheck, Sparkles } from "lucide-react";
+import { api, type AgentRun, type AuditEvent, type CardRow, type PolicyResponse, type User } from "./api";
 import { currency, friendly, type Run } from "./App";
 import { CountUp, Rise, Stagger } from "./motion";
 
@@ -65,12 +65,37 @@ const eventIcon = (action: string) =>
     action.includes("commit") || action.includes("approv") ? <CheckCheck size={14} /> :
       action.includes("verif") || action.includes("policy") ? <ShieldCheck size={14} /> : <Activity size={14} />;
 
+type Swap = { id: string; employee: string; to: string | null; shift: string; saving: string | null;
+  overtime_minutes_avoided: number; reason: string; sent: boolean };
+
+/** Next week: overtime that can still be avoided, priced by the pay engine. */
+function OvertimePlanner({ run, busy, refresh }: { run: Run; busy: boolean; refresh: number }) {
+  const [swaps, setSwaps] = useState<Swap[] | null>(null);
+  useEffect(() => { api<{ suggestions: Swap[] }>("/planner").then(d => setSwaps(d.suggestions)).catch(() => setSwaps([])); }, [refresh]);
+  const total = (swaps ?? []).reduce((s, x) => s + Number(x.saving ?? 0), 0);
+  return <div className="card planner"><div className="card-head"><span className="chip-icon"><CalendarClock size={16} /></span><h3>Next week: overtime you can still avoid</h3>
+    {swaps && <strong className="figure saving">{currency(String(total))}</strong>}</div>
+    <p className="muted">From next week's schedule. The pay engine prices both people before and after each swap; nothing changes until scheduling acts.</p>
+    {!swaps ? <div className="skeleton"><i /><i /></div> : <ul className="swaps">{swaps.map(s => <motion.li key={s.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+      <div><strong>{s.employee}{s.to && <> → {s.to}</>}</strong><small>{s.shift}</small><p>{s.reason}</p></div>
+      {s.saving ? <div className="swap-side"><b className="figure">−{currency(s.saving)}</b>
+        <button className="button secondary small" disabled={busy || s.sent} onClick={() => run(() => api(`/planner/${s.id}/send`, "POST"),
+          "Sent to scheduling. Recorded in the audit ledger.")}>{s.sent ? "Sent" : "Send to scheduling"}</button></div>
+        : <span className="badge amber">No safe swap</span>}
+    </motion.li>)}</ul>}
+  </div>;
+}
+
 export default function Overview({ cards, policies, signed, user, run, busy, refresh, go }: {
   cards: CardRow[]; policies: PolicyResponse | null; signed: boolean; user: User; run: Run; busy: boolean;
   refresh: number; go: (page: string, cardId?: string) => void;
 }) {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [integrity, setIntegrity] = useState<{ ok: boolean; unverified: number } | null>(null);
+  const [agentRun, setAgentRun] = useState<AgentRun | null>(null);
+  useEffect(() => {
+    api<{ run: AgentRun | null }>("/agent/runs/latest").then(d => setAgentRun(d.run)).catch(() => undefined);
+  }, [refresh]);
   useEffect(() => {
     let live = true;
     api<{ events: AuditEvent[]; integrity: boolean; unverified_commits: number }>("/audit").then(data => {
@@ -82,20 +107,21 @@ export default function Overview({ cards, policies, signed, user, run, busy, ref
   const families = Object.entries(exceptions.reduce<Record<string, number>>((acc, e) => ({ ...acc, [e.family]: (acc[e.family] || 0) + 1 }), {}))
     .sort((a, b) => b[1] - a[1]).map(([label, value], i) => ({ label, value, color: FAMILY_COLORS[i % FAMILY_COLORS.length] }));
   const stage = (names: string[]) => cards.filter(c => names.includes(c.workflow)).length;
+  const lanes = agentRun?.lanes ?? {};
   const funnel = [
     ["Detected", cards.filter(c => c.exceptions.length).length],
-    ["Proposed", stage(["proposed", "manual_review", "verified", "committed"])],
-    ["Verified", stage(["verified", "committed"])],
-    ["Committed", stage(["committed"])],
+    ["Ready to approve", lanes.ready ?? 0],
+    ["Waiting on employee", lanes.waiting ?? 0],
+    ["Needs judgment", lanes.judgment ?? 0],
+    ["Approved", agentRun?.approved ?? 0],
   ] as [string, number][];
   const top = Math.max(1, ...funnel.map(f => f[1]));
   const gross = cards.reduce((s, c) => s + (c.total ? Number(c.total) : 0), 0);
-  const maya = cards.find(c => c.exceptions.some(e => e.code === "missing_endpoint"));
   const hour = new Date().getHours();
   const kpis: [string, number, (n: number) => string, string][] = [
     ["Open exceptions", exceptions.length, n => String(Math.round(n)), "amber"],
     ["Timecards to review", cards.filter(c => c.exceptions.length).length, n => String(Math.round(n)), "blue"],
-    ["Verified, awaiting approval", stage(["verified"]), n => String(Math.round(n)), "violet"],
+    ["Ready for one-click approval", lanes.ready ?? 0, n => String(Math.round(n)), "violet"],
     ["Committed fixes", stage(["committed"]), n => String(Math.round(n)), "green"],
     ["Calculable gross pay", gross, n => currency(String(n)).replace(/\.\d+$/, ""), "teal"],
   ];
@@ -103,9 +129,9 @@ export default function Overview({ cards, policies, signed, user, run, busy, ref
     <Rise className="hero">
       <div><span className="eyebrow"><Sparkles size={14} />{hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}, {user.name.split(" ")[0]}</span>
         <h1>Every correction, <em>proven</em> before it counts.</h1>
-        <p>AI drafts. A deterministic engine recomputes the pay. A second human approves. Nothing is committed without all three.</p></div>
+        <p>The agent reads every timecard and the employee's own note, plans a compliant fix, and the pay engine proves it. You approve the ready ones in one click.</p></div>
       <div className="hero-actions">
-        {maya && <button className="button primary" onClick={() => go("desk", maya.id)}>Open a missed punch <ArrowRight size={15} /></button>}
+        <button className="button primary" onClick={() => go("queue")}>{agentRun ? "Open the resolution queue" : "Run the agent"} <ArrowRight size={15} /></button>
         <button className="button ghost" onClick={() => go("policy")}>{signed ? "Review ruleset" : "Sign the ruleset"}</button>
       </div>
     </Rise>
@@ -122,7 +148,7 @@ export default function Overview({ cards, policies, signed, user, run, busy, ref
     <Rise className="grid-2">
       <div className="card"><div className="card-head"><span className="chip-icon"><FileSearch size={16} /></span><h3>Exception mix</h3></div>
         {families.length ? <Donut parts={families} /> : <p className="muted">No exceptions detected.</p>}</div>
-      <div className="card"><div className="card-head"><span className="chip-icon"><Activity size={16} /></span><h3>Resolution funnel</h3></div>
+      <div className="card"><div className="card-head"><span className="chip-icon"><Activity size={16} /></span><h3>{agentRun ? "Where every exception stands" : "Resolution funnel"}</h3></div>
         <div className="funnel">{funnel.map(([label, value], i) => <div key={label} className="funnel-row"><span>{label}</span>
           <div className="bar"><motion.i initial={{ width: 0 }} animate={{ width: `${(value / top) * 100}%` }} transition={{ delay: 0.25 + i * 0.1, duration: 0.7, ease: [0.22, 1, 0.36, 1] }} /></div>
           <b className="figure">{value}</b></div>)}</div>
@@ -130,6 +156,7 @@ export default function Overview({ cards, policies, signed, user, run, busy, ref
           Audit chain {integrity.ok ? "intact" : "BROKEN"} · {integrity.unverified} unverified commits</div>}
       </div>
     </Rise>
+    <Rise><OvertimePlanner run={run} busy={busy} refresh={refresh} /></Rise>
     <Rise className="grid-2">
       <AiEngine run={run} busy={busy} refresh={refresh} />
       <div className="card"><div className="card-head"><span className="chip-icon"><Activity size={16} /></span><h3>Live activity</h3>

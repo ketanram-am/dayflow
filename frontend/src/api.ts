@@ -46,9 +46,32 @@ export type Proposal = {
   proof: Proof | null; attestations: { actor: string; kind: string; reason: string; at: string }[];
   approval: { id: string; actor: string; at: string; proof_hash: string } | null;
 };
-export type Investigation = {
-  status: string; mode: string; summary: string; clauses: string[]; evidence: string[];
-  critic: { safe: boolean; reason: string }; correction: Correction | null;
+export type PlanItem = {
+  exception_id: string; code: string; kind: string; field: "start" | "end" | null; time: string | null;
+  source: "note" | "schedule" | "records"; quote: string | null; reason: string; question: string | null;
+};
+export type TraceStep = { step: string; attempt?: number; ok?: boolean; error?: string; cached?: boolean;
+  failures?: string[]; reason?: string; reply?: string; time?: string | null };
+export type Resolution = {
+  id: string; run_id: string; card_id: string; employee_id: string; employee: string; card_revision: number;
+  lane: "ready" | "waiting" | "judgment" | "clear"; state: "open" | "approved" | "rejected" | "superseded";
+  engine: "ai" | "rules"; hostile: boolean; headline: string; items: PlanItem[];
+  correction: Correction | null; proposal_id: string | null; parent_id: string | null;
+  simulation: { ok: boolean; failures: string[]; before_total: string | null; after_total: string | null;
+    cleared: string[]; new_blocking: string[] };
+  trace: TraceStep[]; created_at: string;
+};
+export type AgentScore = {
+  cards: number; exceptions: number; item_accuracy_pct: number; note_dependent_items: number;
+  note_dependent_accuracy_pct: number; right_time_on_first_ask: number; invented_or_wrong_from_note: number;
+  lane_accuracy_pct: number; verifier_rejected_plans: number; hostile_notes_routed_to_manager: string;
+  model_attempts: number; fallbacks_to_rules: number; seconds: number;
+  manager_minutes_manual_estimate: number; manager_minutes_with_agent_estimate: number;
+};
+export type AgentRun = {
+  id: string; started_by: string; mode: "ai" | "rules"; model: string | null; status: "running" | "finished" | "failed";
+  total: number; done: number; started_at: string; finished_at: string | null;
+  lanes: Partial<Record<Resolution["lane"], number>>; approved: number;
 };
 export type Dispute = {
   id: string; line_id: string | null; reason: string; revision: number; created_at: string;
@@ -63,7 +86,6 @@ export type Detail = {
     opening_comp_minutes: number; note: string; as_of: string;
   };
   pay: Pay; policy_signed: boolean; policy_hash: string; proposals: Proposal[]; disputes: Dispute[];
-  investigations: { id: string; at: string; result: Investigation }[];
 };
 export type PolicyDocument = {
   version: string; disclaimer: string; clauses: Record<string, string>;
@@ -83,6 +105,8 @@ export type Scorecard = {
   seed: number; held_out_seed: number; employees: number; periods: number; labelled_exceptions: number;
   detection: Record<string, { precision: number; recall: number; tp: number; fp: number; fn: number }>;
   model_evaluation: string; release_gates: Record<string, unknown> | null;
+  agent?: { rules_only: AgentScore; ai: (AgentScore & { model: string; licence: string }) | null;
+    assumptions?: string; scope?: string; generated_at?: string };
   provenance: string; disclaimer: string;
 };
 

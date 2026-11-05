@@ -69,6 +69,24 @@ CREATE TABLE IF NOT EXISTS investigations(
  id TEXT PRIMARY KEY, card_id TEXT REFERENCES cards(id), actor TEXT NOT NULL,
  result TEXT NOT NULL, at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS agent_runs(
+ id TEXT PRIMARY KEY, started_by TEXT NOT NULL REFERENCES users(id), mode TEXT NOT NULL,
+ model TEXT, status TEXT NOT NULL CHECK(status IN ('running','finished','failed')),
+ total INTEGER NOT NULL, done INTEGER NOT NULL, started_at TEXT NOT NULL, finished_at TEXT
+);
+CREATE TABLE IF NOT EXISTS resolutions(
+ id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES agent_runs(id),
+ card_id TEXT NOT NULL REFERENCES cards(id), card_revision INTEGER NOT NULL,
+ plan TEXT NOT NULL, plan_hash TEXT NOT NULL,
+ lane TEXT NOT NULL CHECK(lane IN ('ready','waiting','judgment','clear')),
+ state TEXT NOT NULL CHECK(state IN ('open','approved','rejected','superseded')),
+ proposal_id TEXT REFERENCES proposals(id), parent_id TEXT, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS resolution_answers(
+ id TEXT PRIMARY KEY, resolution_id TEXT NOT NULL REFERENCES resolutions(id),
+ actor TEXT NOT NULL REFERENCES users(id), answer TEXT NOT NULL, plan_hash TEXT NOT NULL,
+ created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS audit(
  sequence INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, actor TEXT NOT NULL,
  action TEXT NOT NULL, entity TEXT NOT NULL, details TEXT NOT NULL,
@@ -107,6 +125,14 @@ CREATE TRIGGER IF NOT EXISTS attestation_no_update BEFORE UPDATE ON attestations
  BEGIN SELECT RAISE(ABORT,'Attestations are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS attestation_no_delete BEFORE DELETE ON attestations
  BEGIN SELECT RAISE(ABORT,'Attestations are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS resolution_plan_immutable BEFORE UPDATE ON resolutions
+ WHEN NEW.plan != OLD.plan OR NEW.plan_hash != OLD.plan_hash OR NEW.card_id != OLD.card_id
+ OR NEW.run_id != OLD.run_id OR NEW.card_revision != OLD.card_revision
+ BEGIN SELECT RAISE(ABORT,'Agent plans are immutable; create a new plan'); END;
+CREATE TRIGGER IF NOT EXISTS answer_no_update BEFORE UPDATE ON resolution_answers
+ BEGIN SELECT RAISE(ABORT,'Employee answers are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS answer_no_delete BEFORE DELETE ON resolution_answers
+ BEGIN SELECT RAISE(ABORT,'Employee answers are immutable'); END;
 CREATE TRIGGER IF NOT EXISTS dispute_no_update BEFORE UPDATE ON disputes
  BEGIN SELECT RAISE(ABORT,'Disputes are immutable; append a resolution'); END;
 CREATE TRIGGER IF NOT EXISTS dispute_no_delete BEFORE DELETE ON disputes
