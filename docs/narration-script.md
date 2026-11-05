@@ -8,14 +8,17 @@ a "simplified mock policy, not legal advice".
 
 ## 0. Before you record (10 minutes, offstage)
 
-1. Start Ollama and the app with the recorded model answers:
+1. Start the backend with the recorded model answers (no model server needed), then the web app:
    ```bash
+   # terminal 1, repo root
    export DAYFLOW_LLM_MODE=ollama DAYFLOW_LLM_MODEL=qwen3:1.7b
-   export DAYFLOW_LLM_CACHE=evidence/llm-cache.json DAYFLOW_DB=/tmp/dayflow-demo.sqlite3
+   export DAYFLOW_LLM_CACHE=evidence/llm-cache.json DAYFLOW_DB=/tmp/dayflow-demo-$(date +%s).sqlite3
    .venv/bin/python -m uvicorn app.main:app --app-dir backend --port 8000
+   # terminal 2
+   cd web && npm ci && npm run dev        # open the URL Vite prints
    ```
-   Use a **new** `DAYFLOW_DB` path for each rehearsal so the ruleset starts unsigned and the
-   queue is empty.
+   The `$(date +%s)` gives a **new** database every rehearsal, so the ruleset starts unsigned and the
+   queue is empty. Say in the video that the AI answers are replayed from a recorded run.
 2. Open two browser windows (or profiles): one for **Avery** (reviewer), one for **Alex
    Rivera** (`e004@dayflow.demo`, employee). Password for all: `Dayflow-demo-2026!`.
 3. As Avery, leave everything else untouched. The AI is switched on later, on the Resolution Queue page.
@@ -204,7 +207,7 @@ until scheduling acts, and sending it is recorded."
 
 ## 9. Measured, not claimed (7:45 – 9:00)
 
-**[DO]** **Scorecard**. Point at **Resolution agent: AI vs rules only**.
+**[DO]** **Scorecard**. Point at **Measured, not claimed** (rules only against AI).
 
 **SAY:**
 "Every exception in this data set has a labelled correct answer, so we can measure the
