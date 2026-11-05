@@ -1,0 +1,374 @@
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+import hashlib
+import hmac
+import os
+from pathlib import Path
+import time
+
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import Field, StrictBool
+
+
+from .agent import Provider
+from . import ai_features, whatif
+from .ai_planner import make_ai
+from .planner import WEEK
+from .desk import Desk
+from .db import Database, audit, password_hash, uid
+from .domain import Correction, DISCLAIMER, Model, PolicyDocument
+from .services import Service, fail, reviewer
+
+
+class Login(Model):
+    email: str = Field(max_length=120)
+    password: str = Field(max_length=200)
+
+
+class Reason(Model):
+    reason: str = Field(min_length=8, max_length=2000)
+
+
+class Sign(Model):
+    hash: str = Field(min_length=64, max_length=64)
+    reviewed: StrictBool
+
+
+class ProposalInput(Model):
+    revision: int = Field(ge=1)
+    correction: Correction
+    parent_id: str | None = None
+
+
+class Attest(Reason):
+    kind: str = Field(pattern=r"^(employee_confirmation|manager_attestation)$")
+
+
+class Approval(Model):
+    proof_hash: str = Field(min_length=64, max_length=64)
+
+
+class LlmToggle(Model):
+    enabled: StrictBool
+    model: str | None = Field(default=None, max_length=100, pattern=r"^[a-zA-Z0-9._:/-]+$")
+
+
+class WhatIfInput(Model):
+    question: str | None = Field(default=None, max_length=300)
+    field: str | None = Field(default=None, max_length=40)
+    value: float | None = Field(default=None, ge=0, le=100000)
+
+
+class RunInput(Model):
+    use_ai: StrictBool = True
+
+
+class AnswerInput(Model):
+    reply: str = Field(pattern=r"^(yes|no|correct)$")
+    time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+class Question(Model):
+    question: str = Field(min_length=3, max_length=300)
+
+
+class DisputeInput(Reason):
+    line_id: str | None = Field(default=None, max_length=200)
+
+
+def create_app(database_path=None):
+    @asynccontextmanager
+    async def lifespan(app):
+        app.state.service = Service(Database(database_path))
+        app.state.failed_logins = {}
+        yield
+
+    app = FastAPI(title="Dayflow", version="0.1.0", lifespan=lifespan,
+                  description=f"Verified timecard exception resolution. {DISCLAIMER}.")
+
+    @app.middleware("http")
+    async def request_guards(request: Request, call_next):
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            origin = request.headers.get("origin")
+            allowed = {
+                "http://localhost:5173", "http://127.0.0.1:5173",
+                "http://localhost:8000", "http://127.0.0.1:8000",
+            } | set(filter(None, os.environ.get("DAYFLOW_ALLOWED_ORIGINS", "").split(",")))
+            same_origin = origin == f"{request.url.scheme}://{request.headers.get('host', '')}"
+            if origin and origin not in allowed and not same_origin:
+                return Response("Origin not allowed", status_code=403)
+            try:
+                length = int(request.headers.get("content-length", "0"))
+            except ValueError:
+                return Response("Invalid content length", status_code=400)
+            if length < 0:
+                return Response("Invalid content length", status_code=400)
+            if length > 2_000_000:
+                return Response("Request too large", status_code=413)
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "same-origin"
+        if request.url.path.startswith("/api"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+    def service(request: Request):
+        return request.app.state.service
+
+    def provider_for(svc):
+        return Provider(enabled=svc.llm_enabled(), model=svc.llm_model())
+
+    def current_user(request: Request, svc=Depends(service)):
+        token = request.cookies.get("dayflow_session", "")
+        hashed = hashlib.sha256(token.encode()).hexdigest()
+        with svc.db.connect() as cx:
+            row = cx.execute(
+                """SELECT u.id,u.email,u.name,u.role,u.employee_id,s.csrf,s.expires,
+                COALESCE((SELECT is_active FROM profiles WHERE user_id=u.id),1) AS active
+                FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?""", (hashed,)
+            ).fetchone()
+            if not row or datetime.fromisoformat(row["expires"]) < datetime.now(timezone.utc):
+                fail("Sign in to continue", 401)
+            if not row["active"]:
+                fail("This account is not active", 403)
+            if request.method not in ("GET", "HEAD", "OPTIONS") and not hmac.compare_digest(
+                request.headers.get("x-csrf-token", ""), row["csrf"]
+            ):
+                fail("Invalid CSRF token", 403)
+            return dict(row)
+
+    from .workforce_api import build_router
+    app.include_router(build_router(current_user, service))
+
+    @app.get("/api/health")
+    def health():
+        return {"status": "ok", "disclaimer": DISCLAIMER}
+
+    @app.post("/api/login")
+    def login(payload: Login, request: Request, response: Response, svc=Depends(service)):
+        key = (request.client.host if request.client else "local", payload.email.lower())
+        prior = request.app.state.failed_logins.get(key, [])
+        prior = [timestamp for timestamp in prior if timestamp > time.monotonic() - 300]
+        if len(prior) >= 10:
+            fail("Too many sign-in attempts; try again later", 429)
+        with svc.db.transaction() as cx:
+            row = cx.execute("SELECT * FROM users WHERE email=?", (payload.email.lower(),)).fetchone()
+            salt = row["salt"] if row else "unknown-account"
+            supplied = password_hash(payload.password, salt)
+            if not row or not hmac.compare_digest(supplied, row["password_hash"]):
+                request.app.state.failed_logins[key] = prior + [time.monotonic()]
+                fail("Invalid email or password", 401)
+            if not cx.execute("SELECT COALESCE((SELECT is_active FROM profiles WHERE user_id=?),1)",
+                              (row["id"],)).fetchone()[0]:
+                fail("This account is not active", 403)
+            token, csrf = uid("session-"), uid("csrf-")
+            cx.execute("INSERT INTO sessions VALUES(?,?,?,?)", (
+                hashlib.sha256(token.encode()).hexdigest(), row["id"], csrf,
+                (datetime.now(timezone.utc) + timedelta(hours=8)).isoformat(),
+            ))
+            audit(cx, row["id"], "session_started", row["id"], {})
+            response.set_cookie("dayflow_session", token, httponly=True, samesite="strict",
+                                secure=os.environ.get("DAYFLOW_SECURE_COOKIES") == "1",
+                                max_age=28800, path="/")
+            return {k: row[k] for k in ("id", "email", "name", "role", "employee_id")} | {"csrf": csrf}
+
+    @app.get("/api/me")
+    def me(user=Depends(current_user)):
+        return {k: v for k, v in user.items() if k != "expires"}
+
+    @app.post("/api/logout")
+    def logout(request: Request, response: Response, user=Depends(current_user), svc=Depends(service)):
+        with svc.db.transaction() as cx:
+            cx.execute("DELETE FROM sessions WHERE token_hash=?", (
+                hashlib.sha256(request.cookies["dayflow_session"].encode()).hexdigest(),
+            ))
+            audit(cx, user["id"], "session_ended", user["id"], {})
+        response.delete_cookie("dayflow_session", path="/")
+        return {"status": "signed_out"}
+
+    @app.get("/api/cards")
+    def cards(user=Depends(current_user), svc=Depends(service)):
+        return svc.list_cards(user)
+
+    @app.get("/api/cards/{identity}")
+    def card(identity: str, user=Depends(current_user), svc=Depends(service)):
+        return svc.detail(identity, user)
+
+    @app.get("/api/policies")
+    def policies(user=Depends(current_user), svc=Depends(service)):
+        return svc.policies(user)
+
+    @app.post("/api/policies/compile")
+    def compile_policy(payload: PolicyDocument, user=Depends(current_user), svc=Depends(service)):
+        return svc.compile(payload, user)
+
+    @app.post("/api/policies/{identity}/sign")
+    def sign(identity: str, payload: Sign, user=Depends(current_user), svc=Depends(service)):
+        if not payload.reviewed:
+            fail("Explicit source-to-rule review acknowledgment is required", 422)
+        return svc.sign(identity, payload.hash, user)
+
+    @app.post("/api/cards/{identity}/proposals")
+    def propose(identity: str, payload: ProposalInput,
+                user=Depends(current_user), svc=Depends(service)):
+        return svc.propose(identity, payload.correction, payload.revision, user, payload.parent_id)
+
+    @app.post("/api/proposals/{identity}/attest")
+    def attest(identity: str, payload: Attest, user=Depends(current_user), svc=Depends(service)):
+        return svc.attest(identity, payload.kind, payload.reason, user)
+
+    @app.post("/api/proposals/{identity}/verify")
+    def verify(identity: str, user=Depends(current_user), svc=Depends(service)):
+        return svc.verify(identity, user)
+
+    @app.post("/api/proposals/{identity}/approve")
+    def approve(identity: str, payload: Approval, user=Depends(current_user), svc=Depends(service)):
+        return svc.approve(identity, payload.proof_hash, user)
+
+    @app.post("/api/proposals/{identity}/reject")
+    def reject(identity: str, payload: Reason, user=Depends(current_user), svc=Depends(service)):
+        return svc.reject(identity, payload.reason, user)
+
+    @app.post("/api/cards/{identity}/disputes")
+    def dispute(identity: str, payload: DisputeInput, user=Depends(current_user), svc=Depends(service)):
+        return svc.dispute(identity, payload.line_id, payload.reason, user)
+
+    @app.post("/api/disputes/{identity}/resolve")
+    def resolve(identity: str, payload: Reason, user=Depends(current_user), svc=Depends(service)):
+        return svc.resolve(identity, payload.reason, user)
+
+    @app.get("/api/audit")
+    def audit_log(user=Depends(current_user), svc=Depends(service)):
+        return svc.audit_log(user)
+
+    def desk(svc):
+        return Desk(svc)
+
+    @app.post("/api/agent/runs")
+    def agent_run(payload: RunInput, user=Depends(current_user), svc=Depends(service)):
+        provider = provider_for(svc)
+        use_ai = payload.use_ai and provider.mode != "off"
+        return desk(svc).start_run(user, ai=make_ai(provider) if use_ai else None,
+                                   model=provider.model if use_ai else None)
+
+    @app.get("/api/agent/runs/latest")
+    def agent_latest(user=Depends(current_user), svc=Depends(service)):
+        reviewer(user)
+        return {"run": desk(svc).run()}
+
+    @app.get("/api/resolutions")
+    def resolutions(user=Depends(current_user), svc=Depends(service)):
+        return desk(svc).resolutions(user)
+
+    @app.post("/api/resolutions/approve-ready")
+    def approve_ready(user=Depends(current_user), svc=Depends(service)):
+        return desk(svc).approve_ready(user)
+
+    @app.post("/api/resolutions/{identity}/approve")
+    def approve_resolution(identity: str, user=Depends(current_user), svc=Depends(service)):
+        return desk(svc).approve(identity, user)
+
+    @app.post("/api/resolutions/{identity}/reject")
+    def reject_resolution(identity: str, payload: Reason, user=Depends(current_user),
+                          svc=Depends(service)):
+        return desk(svc).reject(identity, payload.reason, user)
+
+    @app.post("/api/resolutions/{identity}/answer")
+    def answer_resolution(identity: str, payload: AnswerInput, user=Depends(current_user),
+                          svc=Depends(service)):
+        return desk(svc).answer(identity, user, payload.reply, payload.time)
+
+    @app.get("/api/config")
+    def config(user=Depends(current_user), svc=Depends(service)):
+        provider = provider_for(svc)
+        return {"llm_mode": provider.mode, "licence": provider.licence, "llm_enabled": svc.llm_enabled(),
+                "llm_configured": Provider().mode != "off", "model": provider.model if provider.mode != "off" else None,
+                "disclaimer": DISCLAIMER, "dataset": "Synthetic / seed 42",
+                "verifier": "dayflow-full-period-v1"}
+
+    @app.get("/api/llm/status")
+    def llm_status(user=Depends(current_user), svc=Depends(service)):
+        reviewer(user)
+        base = Provider(enabled=True, model=svc.llm_model())
+        return {**base.status(), "enabled": svc.llm_enabled(),
+                "configured": base.mode != "off"}
+
+    @app.post("/api/llm")
+    def toggle_llm(payload: LlmToggle, user=Depends(current_user), svc=Depends(service)):
+        return svc.set_llm(payload.enabled, user, payload.model)
+
+    @app.post("/api/cards/{identity}/explain")
+    def explain(identity: str, payload: Question, user=Depends(current_user),
+                svc=Depends(service)):
+        detail = svc.detail(identity, user)  # enforces employee scoping
+        result = ai_features.explain_paycheck(provider_for(svc), detail["pay"], payload.question)
+        with svc.db.transaction() as cx:
+            audit(cx, user["id"], "paycheck_explained", identity, {
+                "source": result["source"], "status": result["status"],
+                "mode": result["mode"],
+            })
+        return result
+
+    @app.post("/api/policies/what-if")
+    def policy_what_if(payload: WhatIfInput, user=Depends(current_user), svc=Depends(service)):
+        reviewer(user)
+        if not payload.question and payload.field is None:
+            fail("Ask a question or choose a rule and value", 422)
+        with svc.db.connect() as cx:
+            result = whatif.what_if(svc, cx, provider_for(svc), payload.question, payload.field,
+                                    payload.value, ai_features.replay_document)
+        with svc.db.transaction() as cx:
+            audit(cx, user["id"], "policy_what_if", "policy", {
+                "status": result["status"], "source": result.get("source"),
+                "field": result.get("change", {}).get("field"),
+                "total_delta": (result.get("replay") or {}).get("total_delta"),
+            })
+        return result
+
+    @app.get("/api/planner")
+    def planner(user=Depends(current_user), svc=Depends(service)):
+        reviewer(user)
+        from .planner import suggestions
+        with svc.db.connect() as cx:
+            policy, _ = svc.policy(cx)
+            sent = {r["entity"] for r in cx.execute(
+                "SELECT entity FROM audit WHERE action='schedule_swap_recommended'")}
+        rules = PolicyDocument.model_validate_json(policy["document"]).rules
+        return {"week": WEEK.isoformat(), "suggestions": [
+            {**s, "sent": s["id"] in sent} for s in suggestions(rules, rules.weekly_minutes)]}
+
+    @app.post("/api/planner/{identity}/send")
+    def planner_send(identity: str, user=Depends(current_user), svc=Depends(service)):
+        reviewer(user)
+        with svc.db.transaction() as cx:
+            audit(cx, user["id"], "schedule_swap_recommended", identity,
+                  {"note": "Sent to the scheduling team; no schedule was changed here."})
+        return {"status": "sent"}
+
+    @app.get("/api/scorecard")
+    def scorecard(user=Depends(current_user)):
+        reviewer(user)
+        import json as _json
+        from .agent_eval import ARTIFACT, evaluate
+        from .evals import detection_scorecard
+        agent = _json.loads(ARTIFACT.read_text()) if ARTIFACT.exists() else {
+            "rules_only": evaluate(), "ai": None}
+        return {**detection_scorecard(), "agent": agent}
+
+    dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    if dist.exists():
+        app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+
+        @app.get("/{path:path}")
+        def frontend(path: str):
+            if path.startswith("api/"):
+                raise HTTPException(404, "API endpoint not found")
+            return FileResponse(dist / "index.html")
+
+    return app
+
+
+app = create_app()

@@ -36,3 +36,15 @@ dist-ssr
 !.env.example
 node_modules/
 dist/
+
+# Python backend
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.sqlite
+*.sqlite3
+*.db

@@ -7,7 +7,7 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 // The Dayflow FastAPI backend serves /api; the proxy keeps the session cookie same-origin.
-const API = process.env["DAYFLOW_API"] ?? "http://127.0.0.1:8000";
+const API = process.env["DAYFLOW_API"] ?? "http://127.0.0.1:8001";
 
 export default defineConfig({
   vite: {
