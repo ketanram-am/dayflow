@@ -15,5 +15,6 @@ DAYFLOW_API=http://127.0.0.1:8020 npm run dev    # point the proxy at another ba
 Sign in with `avery@dayflow.demo` (administrator) or `e004@dayflow.demo` (employee); password
 `Dayflow-demo-2026!`. Set the office location once in Settings (admin) before anyone can check in.
 
-Not yet in this UI (the Dayflow screens still live in `../frontend`): resolution queue, policy studio,
-pay explorer, overtime planner, what-if, audit ledger and eval scorecard.
+Screens: attendance (GeoPulse), shifts (RotaFlow), breaks (ZenBreak), sync (SyncShield), tasks, leave, people,
+reports, plus the Dayflow engine screens: resolution queue, questions for you, overtime, policy studio (with
+what-if), pay explorer, audit ledger and scorecard.

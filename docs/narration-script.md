@@ -18,13 +18,13 @@ a "simplified mock policy, not legal advice".
    queue is empty.
 2. Open two browser windows (or profiles): one for **Avery** (reviewer), one for **Alex
    Rivera** (`e004@dayflow.demo`, employee). Password for all: `Dayflow-demo-2026!`.
-3. As Avery: **Overview → Turn AI on**. Leave everything else untouched.
+3. As Avery, leave everything else untouched. The AI is switched on later, on the Resolution Queue page.
 
 ---
 
 ## 1. The problem (0:00 – 1:00)
 
-**[DO]** Show the Overview.
+**[DO]** Show the Horizon dashboard.
 
 **SAY:**
 "Every two weeks a company turns timecards into pay, and timecards are messy. Someone forgets
@@ -46,7 +46,7 @@ the number 155.
 
 ## 2. The rules the engine runs on (1:00 – 1:45)
 
-**[DO]** **Policy studio**. Click clause **DF-004**, then tick the review box and **Sign &
+**[DO]** **Policy Studio**. Open clause **DF-004**, then tick the review box and **Sign and
 activate ruleset**.
 
 **SAY:**
@@ -60,7 +60,7 @@ be committed until someone signs this exact version. I'm signing it now."
 
 ## 3. Run the agent (1:45 – 3:00)
 
-**[DO]** **Resolution queue → Run agent**. Let the progress bar and the lanes fill.
+**[DO]** **Resolution Queue**: switch on **Use AI to read employee notes**, then **Run agent**. Let the progress bar and the lanes fill.
 
 **SAY:**
 "Now I run the agent over the whole pay period. Watch the three lanes.
@@ -148,7 +148,7 @@ and it's on the record."
 
 ## 6. The employee answers in one tap (5:15 – 6:30)
 
-**[DO]** Switch to Alex's window. **Pay explorer** shows **Questions for you**.
+**[DO]** Switch to Alex's window. open **Questions for You** in the sidebar.
 
 **SAY:**
 "Now I'm Alex. Instead of a manager chasing me, I get one question: *'You wrote "I finished
@@ -157,7 +157,7 @@ at 17:50". We set your clock-out on Wednesday to 17:50. Is that right?'* I tap y
 **[DO]** Click **Yes, that's right**. (Alternative: type a different time and click **Use
 this time** to show a correction.)
 
-**[DO]** Switch back to Avery. **Resolution queue**: Alex is now in *Ready to approve*.
+**[DO]** Switch back to Avery. **Resolution Queue**: Alex is now in *Ready to approve*.
 Click **Approve**.
 
 **SAY:**
@@ -191,7 +191,7 @@ exists, it says so instead of guessing."
 
 **[DO, next week]** Then show the next-week planner.
 
-**[DO]** **Overview**, scroll to **Next week: overtime you can still avoid**.
+**[DO]** **Overtime**, the **Next week (planned)** tab.
 
 **SAY:**
 "Resolving is half the job; the other half is not creating the problem. On next week's
@@ -204,7 +204,7 @@ until scheduling acts, and sending it is recorded."
 
 ## 9. Measured, not claimed (7:45 – 9:00)
 
-**[DO]** **Eval scorecard**. Point at **Resolution agent: AI vs rules only**.
+**[DO]** **Scorecard**. Point at **Resolution agent: AI vs rules only**.
 
 **SAY:**
 "Every exception in this data set has a labelled correct answer, so we can measure the
@@ -216,7 +216,7 @@ AI got something wrong, it never reached a user: those cards fell back to rules.
 
 Below is detection accuracy against labels written before the detectors."
 
-**[DO]** **Audit ledger**: point at "The chain is intact" and the `agent run started` /
+**[DO]** **Audit Ledger**: point at "The chain is intact" and the `agent run started` /
 `resolution approved` events.
 
 **SAY:**
@@ -253,6 +253,6 @@ corrections, proves every one with a pay engine, and sends each card to the righ
 ## If something goes wrong on stage
 
 - **Run takes a while:** it's computing pay for 60 timecards; talk over it (section 3).
-- **AI didn't run:** check the Overview shows the AI as on. With AI off the run still works; say "this is the fallback" and show the rules plan.
+- **AI didn't run:** check the AI switch on the Resolution Queue page is on. With AI off the run still works; say "this is the fallback" and show the rules plan.
 - **A button is greyed out:** usually by design (ruleset unsigned, employee hasn't confirmed, agent can't approve). Say why.
 - **Need a clean start:** stop the server and start it with a new `DAYFLOW_DB` path.

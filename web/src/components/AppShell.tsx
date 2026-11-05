@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 import { motion } from "motion/react";
 import {
-  LayoutDashboard, Repeat, HeartPulse, CloudUpload, BrainCircuit, ListChecks, Settings, LogOut, Menu, UserRound, ShieldCheck, ChevronDown, Search, Bell, CalendarDays, PanelLeftClose, PanelLeftOpen, CalendarOff, MapPin, Users,
+  LayoutDashboard, Repeat, HeartPulse, CloudUpload, BrainCircuit, ListChecks, Settings, LogOut, Menu, UserRound, ShieldCheck, ChevronDown, Search, Bell, CalendarDays, PanelLeftClose, PanelLeftOpen, CalendarOff, MapPin, Users, Inbox, MessageCircleQuestion, Timer, ScrollText, Wallet, FileClock, Gauge,
 } from "lucide-react";
 import { auth, wf } from "@/lib/api";
 import type { SessionUser } from "@/lib/types";
@@ -29,9 +29,16 @@ const main = [
   { to: "/wellness", label: "ZenBreak", icon: HeartPulse },
   { to: "/sync", label: "SyncShield", icon: CloudUpload },
   { to: "/tasks", label: "TaskForge", icon: ListChecks },
+  { to: "/questions", label: "Questions for You", icon: MessageCircleQuestion },
+  { to: "/pay", label: "Pay Explorer", icon: Wallet },
 ] as const;
 const admin = [
   { to: "/leave", label: "LeaveSync", icon: CalendarOff },
+  { to: "/queue", label: "Resolution Queue", icon: Inbox },
+  { to: "/overtime", label: "Overtime", icon: Timer },
+  { to: "/policy", label: "Policy Studio", icon: ScrollText },
+  { to: "/audit", label: "Audit Ledger", icon: FileClock },
+  { to: "/scorecard", label: "Scorecard", icon: Gauge },
 ] as const;
 
 function NavLinks({ isAdmin, collapsed, onNavigate }: { isAdmin: boolean; collapsed?: boolean; onNavigate?: () => void }) {

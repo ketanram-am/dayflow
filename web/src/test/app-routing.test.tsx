@@ -14,4 +14,8 @@ describe("App routing", () => {
 
     expect(matches.at(-1)?.routeId).not.toBe(rootRouteId);
   });
+  it.each(["queue", "questions", "overtime", "policy", "pay", "audit", "scorecard"])("registers /%s as its own engine page", (path) => {
+    const router = createRouter({ routeTree, context: { queryClient: new QueryClient() } });
+    expect(router.matchRoutes(`/${path}`).at(-1)?.routeId).toBe(`/_authenticated/${path}`);
+  });
 });

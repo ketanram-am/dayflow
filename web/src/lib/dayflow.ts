@@ -141,7 +141,16 @@ export type PlannerSuggestion = {
   before: { employee: string; to: string } | null; after: { employee: string; to: string } | null;
 };
 export type LlmStatus = { enabled: boolean; configured: boolean; mode?: string; model?: string | null };
-export type WhatIf = Record<string, unknown> & { status: string; source?: string };
+export type WhatIf = {
+  status: "ok"; source: string; note: string; message: string; document: PolicyDocument;
+  change: { field: string; label: string; unit: string; clause: string; old: string; new: string;
+    clause_before: string; clause_after: string };
+  replay: { period_start: string; active_version: string; candidate_version: string; cards: number;
+    changed: number; incomplete: number; total_before: string; total_after: string; total_delta: string;
+    by_component: Record<string, string>;
+    rows: { card_id: string; employee: string; employment: string; before: string | null;
+      after: string | null; delta: string | null; incomplete: boolean }[] };
+} | { status: "blocked" | "not_understood" | "invalid"; message: string; source?: string };
 
 export type Notification = {
   id: string; recipient_id: string; kind: "question" | "correction_approved"; card_id: string | null;
@@ -157,7 +166,7 @@ export const dayflow = {
 
   cards: () => get<{ cards: CardRow[]; policy_signed: boolean; policy_version: string }>("/cards"),
   card: (id: string) => get<Detail>(`/cards/${id}`),
-  explain: (id: string, question: string) => request<{ text: string; source: string; status: string; notice: string | null }>(
+  explain: (id: string, question: string) => request<{ mode: string; cited_line_ids: string[]; text: string; source: string; status: string; notice: string | null }>(
     "POST", `/cards/${id}/explain`, { question }),
 
   // Resolution agent

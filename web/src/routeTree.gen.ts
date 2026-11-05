@@ -13,12 +13,19 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthenticatedAttendanceRouteImport } from './routes/_authenticated/attendance'
+import { Route as AuthenticatedAuditRouteImport } from './routes/_authenticated/audit'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedEmployeesRouteImport } from './routes/_authenticated/employees'
 import { Route as AuthenticatedLeaveRouteImport } from './routes/_authenticated/leave'
 import { Route as AuthenticatedLocationRouteImport } from './routes/_authenticated/location'
+import { Route as AuthenticatedOvertimeRouteImport } from './routes/_authenticated/overtime'
+import { Route as AuthenticatedPayRouteImport } from './routes/_authenticated/pay'
+import { Route as AuthenticatedPolicyRouteImport } from './routes/_authenticated/policy'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
+import { Route as AuthenticatedQuestionsRouteImport } from './routes/_authenticated/questions'
+import { Route as AuthenticatedQueueRouteImport } from './routes/_authenticated/queue'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
+import { Route as AuthenticatedScorecardRouteImport } from './routes/_authenticated/scorecard'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedShiftsRouteImport } from './routes/_authenticated/shifts'
 import { Route as AuthenticatedSyncRouteImport } from './routes/_authenticated/sync'
@@ -44,6 +51,11 @@ const AuthenticatedAttendanceRoute = AuthenticatedAttendanceRouteImport.update({
   path: '/attendance',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAuditRoute = AuthenticatedAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -64,14 +76,44 @@ const AuthenticatedLocationRoute = AuthenticatedLocationRouteImport.update({
   path: '/location',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedOvertimeRoute = AuthenticatedOvertimeRouteImport.update({
+  id: '/overtime',
+  path: '/overtime',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedPayRoute = AuthenticatedPayRouteImport.update({
+  id: '/pay',
+  path: '/pay',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedPolicyRoute = AuthenticatedPolicyRouteImport.update({
+  id: '/policy',
+  path: '/policy',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedQuestionsRoute = AuthenticatedQuestionsRouteImport.update({
+  id: '/questions',
+  path: '/questions',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedQueueRoute = AuthenticatedQueueRouteImport.update({
+  id: '/queue',
+  path: '/queue',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedScorecardRoute = AuthenticatedScorecardRouteImport.update({
+  id: '/scorecard',
+  path: '/scorecard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
@@ -104,12 +146,19 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/attendance': typeof AuthenticatedAttendanceRoute
+  '/audit': typeof AuthenticatedAuditRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/employees': typeof AuthenticatedEmployeesRoute
   '/leave': typeof AuthenticatedLeaveRoute
   '/location': typeof AuthenticatedLocationRoute
+  '/overtime': typeof AuthenticatedOvertimeRoute
+  '/pay': typeof AuthenticatedPayRoute
+  '/policy': typeof AuthenticatedPolicyRoute
   '/profile': typeof AuthenticatedProfileRoute
+  '/questions': typeof AuthenticatedQuestionsRoute
+  '/queue': typeof AuthenticatedQueueRoute
   '/reports': typeof AuthenticatedReportsRoute
+  '/scorecard': typeof AuthenticatedScorecardRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/shifts': typeof AuthenticatedShiftsRoute
   '/sync': typeof AuthenticatedSyncRoute
@@ -120,12 +169,19 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/attendance': typeof AuthenticatedAttendanceRoute
+  '/audit': typeof AuthenticatedAuditRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/employees': typeof AuthenticatedEmployeesRoute
   '/leave': typeof AuthenticatedLeaveRoute
   '/location': typeof AuthenticatedLocationRoute
+  '/overtime': typeof AuthenticatedOvertimeRoute
+  '/pay': typeof AuthenticatedPayRoute
+  '/policy': typeof AuthenticatedPolicyRoute
   '/profile': typeof AuthenticatedProfileRoute
+  '/questions': typeof AuthenticatedQuestionsRoute
+  '/queue': typeof AuthenticatedQueueRoute
   '/reports': typeof AuthenticatedReportsRoute
+  '/scorecard': typeof AuthenticatedScorecardRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/shifts': typeof AuthenticatedShiftsRoute
   '/sync': typeof AuthenticatedSyncRoute
@@ -138,12 +194,19 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/login': typeof LoginRoute
   '/_authenticated/attendance': typeof AuthenticatedAttendanceRoute
+  '/_authenticated/audit': typeof AuthenticatedAuditRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/employees': typeof AuthenticatedEmployeesRoute
   '/_authenticated/leave': typeof AuthenticatedLeaveRoute
   '/_authenticated/location': typeof AuthenticatedLocationRoute
+  '/_authenticated/overtime': typeof AuthenticatedOvertimeRoute
+  '/_authenticated/pay': typeof AuthenticatedPayRoute
+  '/_authenticated/policy': typeof AuthenticatedPolicyRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
+  '/_authenticated/questions': typeof AuthenticatedQuestionsRoute
+  '/_authenticated/queue': typeof AuthenticatedQueueRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
+  '/_authenticated/scorecard': typeof AuthenticatedScorecardRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/shifts': typeof AuthenticatedShiftsRoute
   '/_authenticated/sync': typeof AuthenticatedSyncRoute
@@ -156,12 +219,19 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/attendance'
+    | '/audit'
     | '/dashboard'
     | '/employees'
     | '/leave'
     | '/location'
+    | '/overtime'
+    | '/pay'
+    | '/policy'
     | '/profile'
+    | '/questions'
+    | '/queue'
     | '/reports'
+    | '/scorecard'
     | '/settings'
     | '/shifts'
     | '/sync'
@@ -172,12 +242,19 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/attendance'
+    | '/audit'
     | '/dashboard'
     | '/employees'
     | '/leave'
     | '/location'
+    | '/overtime'
+    | '/pay'
+    | '/policy'
     | '/profile'
+    | '/questions'
+    | '/queue'
     | '/reports'
+    | '/scorecard'
     | '/settings'
     | '/shifts'
     | '/sync'
@@ -189,12 +266,19 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/login'
     | '/_authenticated/attendance'
+    | '/_authenticated/audit'
     | '/_authenticated/dashboard'
     | '/_authenticated/employees'
     | '/_authenticated/leave'
     | '/_authenticated/location'
+    | '/_authenticated/overtime'
+    | '/_authenticated/pay'
+    | '/_authenticated/policy'
     | '/_authenticated/profile'
+    | '/_authenticated/questions'
+    | '/_authenticated/queue'
     | '/_authenticated/reports'
+    | '/_authenticated/scorecard'
     | '/_authenticated/settings'
     | '/_authenticated/shifts'
     | '/_authenticated/sync'
@@ -238,6 +322,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAttendanceRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/audit': {
+      id: '/_authenticated/audit'
+      path: '/audit'
+      fullPath: '/audit'
+      preLoaderRoute: typeof AuthenticatedAuditRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/dashboard': {
       id: '/_authenticated/dashboard'
       path: '/dashboard'
@@ -266,6 +357,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedLocationRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/overtime': {
+      id: '/_authenticated/overtime'
+      path: '/overtime'
+      fullPath: '/overtime'
+      preLoaderRoute: typeof AuthenticatedOvertimeRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/pay': {
+      id: '/_authenticated/pay'
+      path: '/pay'
+      fullPath: '/pay'
+      preLoaderRoute: typeof AuthenticatedPayRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/policy': {
+      id: '/_authenticated/policy'
+      path: '/policy'
+      fullPath: '/policy'
+      preLoaderRoute: typeof AuthenticatedPolicyRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/profile': {
       id: '/_authenticated/profile'
       path: '/profile'
@@ -273,11 +385,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProfileRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/questions': {
+      id: '/_authenticated/questions'
+      path: '/questions'
+      fullPath: '/questions'
+      preLoaderRoute: typeof AuthenticatedQuestionsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/queue': {
+      id: '/_authenticated/queue'
+      path: '/queue'
+      fullPath: '/queue'
+      preLoaderRoute: typeof AuthenticatedQueueRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/reports': {
       id: '/_authenticated/reports'
       path: '/reports'
       fullPath: '/reports'
       preLoaderRoute: typeof AuthenticatedReportsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/scorecard': {
+      id: '/_authenticated/scorecard'
+      path: '/scorecard'
+      fullPath: '/scorecard'
+      preLoaderRoute: typeof AuthenticatedScorecardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/settings': {
@@ -320,12 +453,19 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAttendanceRoute: typeof AuthenticatedAttendanceRoute
+  AuthenticatedAuditRoute: typeof AuthenticatedAuditRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedEmployeesRoute: typeof AuthenticatedEmployeesRoute
   AuthenticatedLeaveRoute: typeof AuthenticatedLeaveRoute
   AuthenticatedLocationRoute: typeof AuthenticatedLocationRoute
+  AuthenticatedOvertimeRoute: typeof AuthenticatedOvertimeRoute
+  AuthenticatedPayRoute: typeof AuthenticatedPayRoute
+  AuthenticatedPolicyRoute: typeof AuthenticatedPolicyRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
+  AuthenticatedQuestionsRoute: typeof AuthenticatedQuestionsRoute
+  AuthenticatedQueueRoute: typeof AuthenticatedQueueRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
+  AuthenticatedScorecardRoute: typeof AuthenticatedScorecardRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedShiftsRoute: typeof AuthenticatedShiftsRoute
   AuthenticatedSyncRoute: typeof AuthenticatedSyncRoute
@@ -335,12 +475,19 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAttendanceRoute: AuthenticatedAttendanceRoute,
+  AuthenticatedAuditRoute: AuthenticatedAuditRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedEmployeesRoute: AuthenticatedEmployeesRoute,
   AuthenticatedLeaveRoute: AuthenticatedLeaveRoute,
   AuthenticatedLocationRoute: AuthenticatedLocationRoute,
+  AuthenticatedOvertimeRoute: AuthenticatedOvertimeRoute,
+  AuthenticatedPayRoute: AuthenticatedPayRoute,
+  AuthenticatedPolicyRoute: AuthenticatedPolicyRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
+  AuthenticatedQuestionsRoute: AuthenticatedQuestionsRoute,
+  AuthenticatedQueueRoute: AuthenticatedQueueRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
+  AuthenticatedScorecardRoute: AuthenticatedScorecardRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedShiftsRoute: AuthenticatedShiftsRoute,
   AuthenticatedSyncRoute: AuthenticatedSyncRoute,
