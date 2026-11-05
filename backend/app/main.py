@@ -179,9 +179,9 @@ def create_app(database_path=None):
                                 max_age=28800, path="/")
             return {k: row[k] for k in ("id", "email", "name", "role", "employee_id")} | {"csrf": csrf}
 
-    # Demo convenience, off unless DAYFLOW_DEMO_SWITCH=1: signed-in users can hop between the two demo
+    # Demo convenience, off unless DAYFLOW_DEMO_SWITCH=1: signed-in users can hop between the three demo
     # accounts without signing out. Only these ids can be reached, and every switch is audited.
-    DEMO_ACCOUNTS = ("avery", "e004")  # the manager and the employee used in the demo
+    DEMO_ACCOUNTS = ("avery", "taylor", "e004")  # manager, second approver and employee used in the demo
 
     def demo_enabled():
         return os.environ.get("DAYFLOW_DEMO_SWITCH") == "1"
@@ -195,7 +195,7 @@ def create_app(database_path=None):
         label = {"reviewer": "Administrator", "employee": "Employee"}
         return {"enabled": True, "accounts": [
             {"id": r["id"], "name": r["name"], "role": r["role"],
-             "label": label[r["role"]],
+             "label": "Second approver" if r["id"] == "taylor" else label[r["role"]],
              "current": r["id"] == user["id"]} for r in rows if r]}
 
     @app.post("/api/demo/switch")

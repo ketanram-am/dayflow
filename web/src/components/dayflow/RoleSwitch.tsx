@@ -1,13 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { ShieldCheck, UserRound } from "lucide-react";
+import { ShieldCheck, UserCheck, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { auth } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 /**
- * Demo only. A two-way Manager / Employee toggle so a recording never needs a sign-out. It renders only when the
+ * Demo only. A Manager / Approver / Employee toggle so a recording never needs a sign-out. It renders only when the
  * backend was started with DAYFLOW_DEMO_SWITCH=1, and the server decides which accounts it can reach.
  */
 export function RoleSwitch() {
@@ -15,10 +15,12 @@ export function RoleSwitch() {
   const navigate = useNavigate();
   const demo = useQuery({ queryKey: ["demo-accounts"], queryFn: auth.demoAccounts, retry: false });
   if (!demo.data?.enabled) return null;
+  // Manager starts the run, the second approver is a different person, the employee answers questions.
   const options = [
-    { role: "reviewer" as const, label: "Manager", icon: ShieldCheck, to: "/queue" as const },
-    { role: "employee" as const, label: "Employee", icon: UserRound, to: "/questions" as const },
-  ].map((o) => ({ ...o, account: demo.data.accounts.find((a) => a.role === o.role) })).filter((o) => o.account);
+    { id: "avery", label: "Manager", icon: ShieldCheck, to: "/queue" as const },
+    { id: "taylor", label: "Approver", icon: UserCheck, to: "/queue" as const },
+    { id: "e004", label: "Employee", icon: UserRound, to: "/questions" as const },
+  ].map((o) => ({ ...o, account: demo.data.accounts.find((a) => a.id === o.id) })).filter((o) => o.account);
 
   async function pick(o: (typeof options)[number]) {
     if (!o.account || o.account.current) return;
@@ -41,7 +43,7 @@ export function RoleSwitch() {
           const active = !!o.account?.current;
           return (
             <button
-              key={o.role}
+              key={o.id}
               type="button"
               aria-pressed={active}
               onClick={() => pick(o)}

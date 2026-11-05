@@ -327,7 +327,7 @@ def test_a_request_from_the_servers_own_address_is_allowed_on_any_port(tmp_path)
         assert client.post("/api/login", json=body, headers={"origin": "https://evil.example"}).status_code == 403
 
 
-def test_demo_switch_is_off_by_default_and_limited_to_two_audited_accounts(tmp_path, monkeypatch):
+def test_demo_switch_is_off_by_default_and_limited_to_three_audited_accounts(tmp_path, monkeypatch):
     monkeypatch.delenv("DAYFLOW_DEMO_SWITCH", raising=False)
     with TestClient(create_app(tmp_path / "s.sqlite3")) as client:
         login = client.post("/api/login", json={"email": "avery@dayflow.demo", "password": "Dayflow-demo-2026!"}).json()
@@ -336,8 +336,8 @@ def test_demo_switch_is_off_by_default_and_limited_to_two_audited_accounts(tmp_p
         assert client.post("/api/demo/switch", json={"user_id": "e004"}, headers=h).status_code == 403
         monkeypatch.setenv("DAYFLOW_DEMO_SWITCH", "1")
         accounts = client.get("/api/demo/accounts").json()
-        assert [a["id"] for a in accounts["accounts"]] == ["avery", "e004"] and accounts["enabled"]
-        assert client.post("/api/demo/switch", json={"user_id": "taylor"}, headers=h).status_code == 403
+        assert [a["id"] for a in accounts["accounts"]] == ["avery", "taylor", "e004"] and accounts["enabled"]
+        assert client.post("/api/demo/switch", json={"user_id": "e001"}, headers=h).status_code == 403
         assert client.post("/api/demo/switch", json={"user_id": "dayflow-agent"}, headers=h).status_code == 403
         assert client.post("/api/demo/switch", json={"user_id": "e004"}).status_code == 403          # CSRF still applies
         moved = client.post("/api/demo/switch", json={"user_id": "e004"}, headers=h).json()

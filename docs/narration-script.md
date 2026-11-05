@@ -21,8 +21,8 @@ a "simplified mock policy, not legal advice".
    The `$(date +%s)` gives a **new** database every rehearsal, so the ruleset starts unsigned and the
    queue is empty. Say in the video that the AI answers are replayed from a recorded run.
 2. One browser window is enough. Sign in once as **Avery** (`avery@dayflow.demo`, password
-   `Dayflow-demo-2026!`). The **View as: Manager | Employee** toggle in the top bar switches to Alex
-   Rivera (the employee) and back in one click, with no sign-out. It only appears because the backend was
+   `Dayflow-demo-2026!`). The **View as: Manager | Approver | Employee** toggle in the top bar switches
+   between Avery (manager), Taylor Reed (a second, independent approver) and Alex Rivera (the employee) in one click, with no sign-out. It only appears because the backend was
    started with `DAYFLOW_DEMO_SWITCH=1` (included above).
 3. As Avery, leave everything else untouched. The AI is switched on later, on the Resolution Queue page.
 
@@ -142,13 +142,14 @@ for the scheduling team; it never rewrites a schedule by itself."
 
 ## 5. Approve everything that's ready (4:30 – 5:15)
 
-**[DO]** Close the drawer. In *Ready to approve*, click **Approve all**.
+**[DO]** Close the drawer. Click **Approver** in the toggle (Taylor Reed). In *Ready to approve*, click **Approve all**.
 
 **SAY:**
 "Everything in this lane changes nobody's hours. One click. For each one the system
 creates the correction, re-verifies the full pay period and commits it. The agent wrote
-the plans but is not allowed to approve. I'm a different person, so the approval is mine,
-and it's on the record."
+the plans but is not allowed to approve, and neither is the manager who started the run.
+Taylor is a different person, so the approval is hers, and it's on the record. Three roles:
+the agent proposes, the manager runs it, an independent person approves."
 
 ---
 
@@ -163,7 +164,7 @@ at 17:50". We set your clock-out on Wednesday to 17:50. Is that right?'* I tap y
 **[DO]** Click **Yes, that's right**. (Alternative: type a different time and click **Use
 this time** to show a correction.)
 
-**[DO]** Click **Manager** in the toggle. Open **Resolution Queue**: Alex is now in *Ready to approve*.
+**[DO]** Click **Approver** in the toggle. Open **Resolution Queue**: Alex is now in *Ready to approve*.
 Click **Approve**.
 
 **SAY:**
