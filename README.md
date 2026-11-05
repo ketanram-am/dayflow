@@ -158,14 +158,19 @@ cd ../frontend && npx playwright install chromium && npm run test:e2e
 ## Architecture
 
 ```text
-React + TypeScript (queue, lanes, drawer, derivations)
+web/        Dayflow web app (React + TanStack): attendance, shifts, leave, tasks, and the screens to come
+frontend/   Dayflow engine screens (queue, lanes, drawer, derivations) used for the demo and end-to-end tests
         | cookie session + CSRF
-FastAPI ── /api/agent/runs, /api/resolutions/*, /api/planner, /api/policies/what-if ...
+FastAPI ── /api/agent/*, /api/resolutions/*, /api/planner, /api/policies/*, /api/wf/*
         |
-        ├─ resolver.py     compliant plan per exception, lanes          (no AI)
-        ├─ ai_planner.py   reads notes; code grounds quotes and times    (AI, optional)
-        ├─ engine.py       pure Decimal pay engine, detectors, traces    (no AI)
-        ├─ desk.py         runs, approvals, employee answers             (no AI)
+        ├─ resolver.py     compliant plan per exception, lanes             (no AI)
+        ├─ reassign.py     proves a fix for schedule clashes                (no AI)
+        ├─ ai_planner.py   reads notes in 4 languages; code grounds them    (AI, optional)
+        ├─ engine.py       pure Decimal pay engine, detectors, traces       (no AI)
+        ├─ desk.py         runs, approvals, employee answers                (no AI)
+        ├─ workforce.py    geofenced punches, breaks, sync, shifts, leave, tasks
+        ├─ forecast.py     mid-week overtime forecast and one-click apply
+        ├─ notify.py       in-app notifications, optional email
         ├─ services.py     proposals, verification, atomic commit
         └─ db.py           SQLite, immutable plans/answers/approvals, hash-chained audit
 ```
@@ -178,6 +183,11 @@ FastAPI ── /api/agent/runs, /api/resolutions/*, /api/planner, /api/policies/
 | `backend/app/desk.py` | Agent runs, approve / approve all, employee answers |
 | `backend/app/agent_eval.py` | Agent vs rules-only scorecard against labelled answers |
 | `backend/app/planner.py` | Next-week overtime prevention |
+| `backend/app/forecast.py` | This-week overtime forecast from real punches |
+| `backend/app/reassign.py` | Verified fixes for schedule clashes |
+| `backend/app/workforce.py` | Attendance, breaks, sync, shifts, leave and tasks (`/api/wf`) |
+| `backend/app/notify.py` | Notifications and optional email |
+| `web/` | The web app; start with `docs/frontend-handoff.md` |
 | `backend/app/data.py` | Synthetic data, detector labels and expected resolutions |
 | `frontend/src/Queue.tsx` | Resolution queue, plan drawer, employee questions |
 
@@ -204,6 +214,7 @@ Pydantic, HTTPX, Uvicorn, React, Vite, TypeScript, motion, Lucide.
 
 - [Five-slide presentation](docs/deck.html)
 - [Demo runbook](docs/demo.md) and [word-for-word narration](docs/narration-script.md)
+- [Frontend handoff](docs/frontend-handoff.md) and [Lovable prompts + improvement list](docs/lovable-prompt.md)
 - **Demo video: pending recording.** Add the URL here before submission.
 
 ## Limits

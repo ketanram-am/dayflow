@@ -255,16 +255,11 @@ class Service:
             ):
                 proposals.append(self.proposal_json(cx, row))
             disputes = self.disputes_for(cx, identity)
-            investigations = [{
-                "id": row["id"], "at": row["at"], "result": json.loads(row["result"]),
-            } for row in cx.execute(
-                "SELECT * FROM investigations WHERE card_id=? ORDER BY at DESC LIMIT 20", (identity,)
-            )]
             return {
                 "card": card.model_dump(mode="json"),
                 "pay": self.pay(card, cards, policy["document"]),
                 "policy_signed": signed, "policy_hash": policy["content_hash"],
-                "proposals": proposals, "disputes": disputes, "summaries": investigations,
+                "proposals": proposals, "disputes": disputes,
             }
 
     def proposal_json(self, cx, row):

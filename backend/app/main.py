@@ -15,6 +15,7 @@ from pydantic import Field, StrictBool
 from .agent import Provider
 from . import ai_features, whatif
 from .ai_planner import make_ai
+from .planner import WEEK
 from .desk import Desk
 from .db import Database, audit, password_hash, uid
 from .domain import Correction, DISCLAIMER, Model, PolicyDocument
@@ -95,7 +96,8 @@ def create_app(database_path=None):
                 "http://localhost:5173", "http://127.0.0.1:5173",
                 "http://localhost:8000", "http://127.0.0.1:8000",
             } | set(filter(None, os.environ.get("DAYFLOW_ALLOWED_ORIGINS", "").split(",")))
-            if origin and origin not in allowed:
+            same_origin = origin == f"{request.url.scheme}://{request.headers.get('host', '')}"
+            if origin and origin not in allowed and not same_origin:
                 return Response("Origin not allowed", status_code=403)
             try:
                 length = int(request.headers.get("content-length", "0"))
@@ -335,7 +337,7 @@ def create_app(database_path=None):
             sent = {r["entity"] for r in cx.execute(
                 "SELECT entity FROM audit WHERE action='schedule_swap_recommended'")}
         rules = PolicyDocument.model_validate_json(policy["document"]).rules
-        return {"week": "2026-11-02", "suggestions": [
+        return {"week": WEEK.isoformat(), "suggestions": [
             {**s, "sent": s["id"] in sent} for s in suggestions(rules, rules.weekly_minutes)]}
 
     @app.post("/api/planner/{identity}/send")

@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fmtHours, fmtTime, todayUTC, useMe } from "@/lib/attendance";
-import { attendanceStatus, type AttStatus } from "@/lib/people";
+import type { AttStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/employees")({
@@ -56,10 +56,7 @@ function EmployeesPage() {
     enabled: !!me?.isAdmin,
     queryFn: async () => {
       const rows = await wf.overview(todayUTC());
-      return rows.map((e) => ({
-        ...e, today: e.attendance,
-        status: attendanceStatus({ today: e.attendance, onLeave: e.on_leave, shiftStart: e.shift_start }),
-      }));
+      return rows.map((e) => ({ ...e, today: e.attendance }));
     },
   });
 

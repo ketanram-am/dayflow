@@ -16,6 +16,7 @@ from .agent import ProviderFailure, has_instructions
 from .domain import Model
 from .services import AGENT_ID
 from .textcheck import numbers_in
+from .workforce import WORKDAY_START
 
 MODULES = ("geopulse", "shifts", "wellness", "sync", "tasks", "leave")
 
@@ -46,9 +47,9 @@ def facts(workforce, user, module):
             numbers = {f"location_checks_{k}": v for k, v in logs.items()}
             refused = sum(v for k, v in logs.items() if k != "inside")
             findings.append(f"{sum(logs.values())} location checks in 30 days, {refused} not confirmed inside.")
-            late = n(f"SELECT COUNT(*) FROM attendance WHERE attendance_date>=? AND substr(check_in_time,12,5)>'09:30'{clause}",
-                     since, *args)
-            findings.append(f"{late} check-ins after 09:30 UTC in the last 30 days.")
+            late = n(f"SELECT COUNT(*) FROM attendance WHERE attendance_date>=? AND substr(check_in_time,12,5)>?{clause}",
+                     since, WORKDAY_START, *args)
+            findings.append(f"{late} check-ins after {WORKDAY_START} UTC in the last 30 days.")
             numbers["late_check_ins"] = late
         elif module == "shifts":
             week = (today + timedelta(days=7)).isoformat()
