@@ -143,7 +143,14 @@ export type PlannerSuggestion = {
 export type LlmStatus = { enabled: boolean; configured: boolean; mode?: string; model?: string | null };
 export type WhatIf = Record<string, unknown> & { status: string; source?: string };
 
+export type Notification = {
+  id: string; recipient_id: string; kind: "question" | "correction_approved"; card_id: string | null;
+  proposal_id: string | null; subject: string; body: string; delivery: string; created_at: string; read_at: string | null;
+};
+
 export const dayflow = {
+  notifications: () => get<{ notifications: Notification[] }>("/wf/notifications"),
+  markRead: (id: string) => request("POST", `/wf/notifications/${id}/read`, {}),
   config: () => get<{ llm_mode: string; llm_enabled: boolean; llm_configured: boolean; model: string | null;
     licence: string; disclaimer: string; dataset: string; verifier: string }>("/config"),
   setAi: (enabled: boolean, model?: string) => request("POST", "/llm", { enabled, ...(model ? { model } : {}) }),

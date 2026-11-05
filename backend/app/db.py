@@ -137,6 +137,11 @@ CREATE TRIGGER IF NOT EXISTS dispute_no_update BEFORE UPDATE ON disputes
  BEGIN SELECT RAISE(ABORT,'Disputes are immutable; append a resolution'); END;
 CREATE TRIGGER IF NOT EXISTS dispute_no_delete BEFORE DELETE ON disputes
  BEGIN SELECT RAISE(ABORT,'Disputes are immutable'); END;
+CREATE TABLE IF NOT EXISTS notifications(
+ id TEXT PRIMARY KEY, recipient_id TEXT NOT NULL REFERENCES users(id), kind TEXT NOT NULL,
+ card_id TEXT, proposal_id TEXT, subject TEXT NOT NULL, body TEXT NOT NULL,
+ delivery TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL, read_at TEXT
+);
 CREATE TABLE IF NOT EXISTS office_settings(
  id INTEGER PRIMARY KEY CHECK(id=1), office_name TEXT NOT NULL DEFAULT 'Main office',
  latitude REAL CHECK(latitude BETWEEN -90 AND 90), longitude REAL CHECK(longitude BETWEEN -180 AND 180),

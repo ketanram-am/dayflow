@@ -364,6 +364,17 @@ def build_router(current_user, service):
     def delete_task(identity: str, user=Depends(current_user), w=Depends(wf)):
         return w.delete_task(user, identity)
 
+    # --- notifications (in-app; email when SMTP is configured)
+    @router.get("/notifications")
+    def notifications(user=Depends(current_user), svc=Depends(service)):
+        from . import notify
+        return {"notifications": notify.listing(svc.db, user)}
+
+    @router.post("/notifications/{identity}/read")
+    def notification_read(identity: str, user=Depends(current_user), svc=Depends(service)):
+        from . import notify
+        return notify.mark_read(svc.db, user, identity)
+
     # --- overtime forecast
     @router.get("/forecast")
     def forecast(user=Depends(current_user), w=Depends(wf)):
