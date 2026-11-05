@@ -77,6 +77,9 @@ def evaluate(seed=42, ai=None):
                 if exception_id.split(":")[1] in NOTE_CODES:
                     totals["note_items"] += 1
                     totals["note_items_correct"] += ok
+                    language = expected.get("language", "en")
+                    totals[f"lang_{language}"] += 1
+                    totals[f"lang_{language}_correct"] += ok
                     if item and item["source"] == "note" and not ok:
                         totals["invented_or_wrong_from_note"] += 1
                     if answer.get("source") == "note" and ok:
@@ -91,6 +94,11 @@ def evaluate(seed=42, ai=None):
             totals["clear"] += plan["lane"] == "clear"
         totals["seconds"] = round(time.monotonic() - started, 1)
     pct = lambda a, b: round(100 * totals[a] / totals[b], 1) if totals[b] else None  # noqa: E731
+    by_language = {lang: {"items": totals[f"lang_{lang}"],
+                          "accuracy_pct": pct(f"lang_{lang}_correct", f"lang_{lang}")}
+                   for lang in ("en", "es", "fr", "pt")}
+    foreign = sum(totals[f"lang_{lang}"] for lang in ("es", "fr", "pt"))
+    foreign_ok = sum(totals[f"lang_{lang}_correct"] for lang in ("es", "fr", "pt"))
     manual = totals["exceptions"] * MINUTES_PER_MANUAL_EXCEPTION
     agent = (totals["cards"] - totals.get("clear", 0)) * MINUTES_PER_AGENT_PLAN
     return {
@@ -98,6 +106,9 @@ def evaluate(seed=42, ai=None):
         "item_accuracy_pct": pct("items_correct", "items"),
         "note_dependent_items": totals["note_items"],
         "note_dependent_accuracy_pct": pct("note_items_correct", "note_items"),
+        "by_language": by_language,
+        "non_english_items": foreign,
+        "non_english_accuracy_pct": round(100 * foreign_ok / foreign, 1) if foreign else None,
         "right_time_on_first_ask": totals["right_time_first_ask"],
         "invented_or_wrong_from_note": totals["invented_or_wrong_from_note"],
         "lane_accuracy_pct": pct("lane_correct", "cards"),

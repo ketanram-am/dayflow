@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-04T13:31:16+00:00",
+  "generated_at": "2026-11-05T00:17:33+00:00",
   "disclaimer": "simplified mock policy, not legal advice",
   "assumptions": "Time saved assumes 4 minutes per exception reviewed by hand and 0.5 per agent plan.",
   "scope": "Synthetic seeded data with labelled answers. Not real-world accuracy.",
@@ -10,6 +10,26 @@
     "item_accuracy_pct": 87.3,
     "note_dependent_items": 28,
     "note_dependent_accuracy_pct": 32.1,
+    "by_language": {
+      "en": {
+        "items": 18,
+        "accuracy_pct": 50.0
+      },
+      "es": {
+        "items": 3,
+        "accuracy_pct": 0.0
+      },
+      "fr": {
+        "items": 5,
+        "accuracy_pct": 0.0
+      },
+      "pt": {
+        "items": 2,
+        "accuracy_pct": 0.0
+      }
+    },
+    "non_english_items": 10,
+    "non_english_accuracy_pct": 0.0,
     "right_time_on_first_ask": 0,
     "invented_or_wrong_from_note": 0,
     "lane_accuracy_pct": 96.7,
@@ -18,7 +38,7 @@
     "model_attempts": 0,
     "model_cached": 0,
     "fallbacks_to_rules": 0,
-    "seconds": 1.0,
+    "seconds": 1.4,
     "manager_minutes_manual_estimate": 620.0,
     "manager_minutes_with_agent_estimate": 25.0
   },
@@ -29,18 +49,38 @@
     "seed": 42,
     "cards": 60,
     "exceptions": 155,
-    "item_accuracy_pct": 98.7,
+    "item_accuracy_pct": 98.0,
     "note_dependent_items": 28,
-    "note_dependent_accuracy_pct": 92.9,
+    "note_dependent_accuracy_pct": 89.3,
+    "by_language": {
+      "en": {
+        "items": 18,
+        "accuracy_pct": 100.0
+      },
+      "es": {
+        "items": 3,
+        "accuracy_pct": 66.7
+      },
+      "fr": {
+        "items": 5,
+        "accuracy_pct": 60.0
+      },
+      "pt": {
+        "items": 2,
+        "accuracy_pct": 100.0
+      }
+    },
+    "non_english_items": 10,
+    "non_english_accuracy_pct": 70.0,
     "right_time_on_first_ask": 10,
     "invented_or_wrong_from_note": 0,
-    "lane_accuracy_pct": 100.0,
+    "lane_accuracy_pct": 98.3,
     "verifier_rejected_plans": 0,
     "hostile_notes_routed_to_manager": "2/2",
-    "model_attempts": 42,
-    "model_cached": 0,
-    "fallbacks_to_rules": 10,
-    "seconds": 98.4,
+    "model_attempts": 33,
+    "model_cached": 23,
+    "fallbacks_to_rules": 5,
+    "seconds": 21.3,
     "manager_minutes_manual_estimate": 620.0,
     "manager_minutes_with_agent_estimate": 25.0
   }

@@ -116,6 +116,24 @@ said it. Code refused, and the card simply fell back to the safe rules plan."
 
 ---
 
+**[DO, optional, 20 seconds]** Open a Spanish card in *Waiting on employee* (for example e017-2026-10-05, "Olvidé marcar la salida el miércoles; salí a las 18:05").
+
+**SAY:**
+"The note is in Spanish. Rules can't read it, so they'd fall back to the schedule. The model reads it and proposes 18:05, and our code still checks that the time appears word for word in a sentence of the note. The check works in any language."
+
+---
+
+**[DO, optional, 30 seconds]** Open a clash card from *Waiting on employee* (any card whose
+chips include **Fix schedule**, for example e010-2026-10-19) and show the schedule fix.
+
+**SAY:**
+"Two shifts were scheduled on top of each other. Before, this went straight to a manager. Now the
+agent sees the shift was actually worked on another day, proposes moving the schedule to where the
+punches are, and the engine proves the clash and the variance both disappear. Approving it is recorded
+for the scheduling team; it never rewrites a schedule by itself."
+
+---
+
 ## 5. Approve everything that's ready (4:30 – 5:15)
 
 **[DO]** Close the drawer. In *Ready to approve*, click **Approve all**.
@@ -160,7 +178,18 @@ suggest. It can't change pay, approve, or write anything."
 
 ---
 
-## 8. Prevent next week's overtime (7:00 – 7:45)
+## 8. Stop overtime before it happens (7:00 – 7:45)
+
+**[DO, live week]** Open the **Overtime** page (or `GET /api/wf/forecast`). Point at the flagged people.
+
+**SAY:**
+"It's Wednesday. This takes the hours people have actually punched so far, adds the shifts still
+scheduled, and shows who will pass 40 hours by the weekend. For each person it offers an option that
+can still stop it: end the Saturday shift earlier, or hand it to a colleague with room. The engine
+prices every option, and one click applies it to the schedule and the audit log. Where no safe option
+exists, it says so instead of guessing."
+
+**[DO, next week]** Then show the next-week planner.
 
 **[DO]** **Overview**, scroll to **Next week: overtime you can still avoid**.
 
@@ -181,8 +210,8 @@ until scheduling acts, and sending it is recorded."
 "Every exception in this data set has a labelled correct answer, so we can measure the
 agent instead of describing it. Rules alone get the note-dependent cases right 32% of the
 time, because they can't read notes. With a small open-weight model running on this laptop,
-1.7 billion parameters, Apache licence, that goes to 93%, and 99% of all 155 exceptions are
-resolved correctly. Zero times invented. Both hostile notes went to a manager. And when the
+1.7 billion parameters, Apache licence, that goes to 89%, and 98% of all 155 exceptions are
+resolved correctly. Ten of those notes are in Spanish, French or Portuguese, which rules cannot read at all; the model gets 70% of them. Zero times invented. Both hostile notes went to a manager. And when the
 AI got something wrong, it never reached a user: those cards fell back to rules.
 
 Below is detection accuracy against labels written before the detectors."
@@ -218,7 +247,7 @@ corrections, proves every one with a pay engine, and sends each card to the righ
 | Why is a missed meal break "paid", not fixed? | Moving punches to avoid a premium is time-shaving. The compliant fix is to pay the premium, which the engine already includes. |
 | Why do employees confirm? | Any change to worked time needs the employee's confirmation of that exact proposal. |
 | Which model? | Open-weight qwen3:1.7b (Apache-2.0) locally via Ollama; any OpenAI-compatible endpoint works. Always check the model's licence and acceptable-use terms. |
-| What if the AI is off or down? | The rules plan still covers everything; only note-dependent answers lose accuracy (93% → 32%). |
+| What if the AI is off or down? | The rules plan still covers everything; only note-dependent answers lose accuracy (89% → 32%). |
 | What's new compared with Dayforce or UKG? | Detection and approval routing exist. The new part is turning the employee's own explanation into a grounded correction, proving it before anyone sees it, and publishing the measured comparison. |
 
 ## If something goes wrong on stage

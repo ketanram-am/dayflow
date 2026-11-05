@@ -137,6 +137,97 @@ CREATE TRIGGER IF NOT EXISTS dispute_no_update BEFORE UPDATE ON disputes
  BEGIN SELECT RAISE(ABORT,'Disputes are immutable; append a resolution'); END;
 CREATE TRIGGER IF NOT EXISTS dispute_no_delete BEFORE DELETE ON disputes
  BEGIN SELECT RAISE(ABORT,'Disputes are immutable'); END;
+CREATE TABLE IF NOT EXISTS office_settings(
+ id INTEGER PRIMARY KEY CHECK(id=1), office_name TEXT NOT NULL DEFAULT 'Main office',
+ latitude REAL CHECK(latitude BETWEEN -90 AND 90), longitude REAL CHECK(longitude BETWEEN -180 AND 180),
+ radius_m INTEGER NOT NULL DEFAULT 150 CHECK(radius_m BETWEEN 20 AND 5000),
+ max_accuracy_m INTEGER NOT NULL DEFAULT 100 CHECK(max_accuracy_m BETWEEN 5 AND 1000),
+ break_reminder_min INTEGER NOT NULL DEFAULT 240 CHECK(break_reminder_min BETWEEN 30 AND 720)
+);
+INSERT OR IGNORE INTO office_settings(id) VALUES(1);
+CREATE TABLE IF NOT EXISTS profiles(
+ user_id TEXT PRIMARY KEY REFERENCES users(id), department TEXT,
+ is_active INTEGER NOT NULL DEFAULT 1, profile_image TEXT, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS attendance(
+ id TEXT PRIMARY KEY, employee_id TEXT NOT NULL REFERENCES users(id),
+ attendance_date TEXT NOT NULL, check_in_time TEXT NOT NULL, check_out_time TEXT,
+ latitude REAL, longitude REAL, location_status TEXT NOT NULL CHECK(location_status IN ('inside','outside')),
+ check_out_latitude REAL, check_out_longitude REAL, total_working_hours REAL,
+ synced_offline INTEGER NOT NULL DEFAULT 0,
+ check_in_event_id TEXT UNIQUE, check_out_event_id TEXT UNIQUE,
+ server_received_at TEXT NOT NULL, created_at TEXT NOT NULL,
+ UNIQUE(employee_id, attendance_date)
+);
+CREATE TABLE IF NOT EXISTS breaks(
+ id TEXT PRIMARY KEY, attendance_id TEXT NOT NULL REFERENCES attendance(id),
+ employee_id TEXT NOT NULL REFERENCES users(id), break_start TEXT NOT NULL, break_end TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS one_active_break ON breaks(employee_id) WHERE break_end IS NULL;
+CREATE TABLE IF NOT EXISTS location_logs(
+ id TEXT PRIMARY KEY, employee_id TEXT NOT NULL REFERENCES users(id),
+ latitude REAL NOT NULL, longitude REAL NOT NULL, accuracy REAL, distance_m REAL,
+ purpose TEXT NOT NULL, geofence_status TEXT NOT NULL
+ CHECK(geofence_status IN ('inside','outside','uncertain','unconfigured','low_accuracy')),
+ recorded_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS leave_policy(
+ id INTEGER PRIMARY KEY CHECK(id=1), annual_days INTEGER NOT NULL DEFAULT 20,
+ casual_days INTEGER NOT NULL DEFAULT 10, sick_days INTEGER NOT NULL DEFAULT 10,
+ unpaid_days INTEGER NOT NULL DEFAULT 5, max_consecutive_days INTEGER NOT NULL DEFAULT 15,
+ min_staff_pct INTEGER NOT NULL DEFAULT 70, updated_at TEXT
+);
+INSERT OR IGNORE INTO leave_policy(id) VALUES(1);
+CREATE TABLE IF NOT EXISTS holidays(
+ id TEXT PRIMARY KEY, holiday_date TEXT UNIQUE NOT NULL, name TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS leave_requests(
+ id TEXT PRIMARY KEY, employee_id TEXT NOT NULL REFERENCES users(id),
+ leave_type TEXT NOT NULL CHECK(leave_type IN ('annual','sick','personal','unpaid','other')),
+ start_date TEXT NOT NULL, end_date TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '',
+ duration TEXT NOT NULL DEFAULT 'full' CHECK(duration IN ('full','half','hourly')), hours REAL,
+ emergency INTEGER NOT NULL DEFAULT 0,
+ approval_status TEXT NOT NULL DEFAULT 'pending' CHECK(approval_status IN ('pending','approved','rejected')),
+ reviewed_by TEXT, reviewed_at TEXT, manager_comment TEXT, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS shift_schedules(
+ id TEXT PRIMARY KEY, employee_id TEXT NOT NULL REFERENCES users(id),
+ assigned_date TEXT NOT NULL, shift_start TEXT NOT NULL, shift_end TEXT NOT NULL,
+ created_at TEXT NOT NULL, UNIQUE(employee_id, assigned_date)
+);
+CREATE TABLE IF NOT EXISTS shift_swap_requests(
+ id TEXT PRIMARY KEY, shift_id TEXT NOT NULL REFERENCES shift_schedules(id),
+ requester_id TEXT NOT NULL REFERENCES users(id), target_employee_id TEXT REFERENCES users(id),
+ reason TEXT NOT NULL DEFAULT '',
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
+ reviewed_by TEXT, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tasks(
+ id TEXT PRIMARY KEY, title TEXT NOT NULL, project TEXT NOT NULL DEFAULT 'General',
+ tag TEXT NOT NULL DEFAULT 'Feature',
+ priority TEXT NOT NULL DEFAULT 'medium' CHECK(priority IN ('low','medium','high')),
+ status TEXT NOT NULL DEFAULT 'todo' CHECK(status IN ('todo','in_progress','review','completed')),
+ progress INTEGER NOT NULL DEFAULT 0 CHECK(progress BETWEEN 0 AND 100),
+ assignee_id TEXT REFERENCES users(id), due_date TEXT, completed_at TEXT,
+ created_by TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sync_log(
+ id TEXT PRIMARY KEY, event_id TEXT, employee_id TEXT NOT NULL REFERENCES users(id),
+ kind TEXT NOT NULL CHECK(kind IN ('check_in','check_out')), captured_at TEXT,
+ synced_at TEXT NOT NULL, attempt INTEGER NOT NULL DEFAULT 1,
+ result TEXT NOT NULL CHECK(result IN ('success','failed','retry','conflict','correction')),
+ error TEXT, device_info TEXT, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sync_conflicts(
+ id TEXT PRIMARY KEY, employee_id TEXT NOT NULL REFERENCES users(id),
+ conflict_type TEXT NOT NULL CHECK(conflict_type IN
+ ('duplicate_punch','missing_checkout','leave_overlap','location_mismatch','sync_failure')),
+ conflict_date TEXT, details TEXT, severity TEXT NOT NULL DEFAULT 'medium'
+ CHECK(severity IN ('low','medium','high')),
+ status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','resolved','rejected')),
+ resolved_by TEXT, resolved_at TEXT, created_at TEXT NOT NULL,
+ UNIQUE(employee_id, conflict_type, conflict_date)
+);
 """
 
 

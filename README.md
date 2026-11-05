@@ -34,17 +34,21 @@ Apache-2.0 model running locally through Ollama.
 
 | Measure | Rules only | With AI |
 |---|---:|---:|
-| Answers that depend on the employee's note (28) | 32.1% | **92.9%** |
-| All 155 exceptions resolved correctly | 87.3% | **98.7%** |
-| Cards routed to the right lane | 96.7% | **100%** |
+| Answers that depend on the employee's note (28) | 32.1% | **89.3%** |
+| …of which the note is in Spanish, French or Portuguese (10) | 0% | **70.0%** |
+| All 155 exceptions resolved correctly | 87.3% | **98.0%** |
+| Cards routed to the right lane | 96.7% | **98.3%** |
 | Right clock time proposed on the first ask | 0 | **10** |
 | Times invented or misread from a note | 0 | **0** |
 | Hostile notes sent to a manager (model never called) | 2/2 | 2/2 |
 | Plans rejected by the pay engine before anyone saw them | 0 | 0 |
 
 When the model got something wrong (for example it tried to read "21:00" from a note that
-never said it), code refused the answer and the card fell back to the rules plan: 10 such
-fallbacks, 0 bad answers shown. Estimated manager time: about 620 minutes by hand vs 25
+never said it), code refused the answer and the card fell back to the rules plan: 5 such
+fallbacks, 0 bad answers shown. About half of the notes that state a time or a story are in Spanish,
+French or Portuguese ("Olvidé marcar la salida; salí a las 18:05"): rules cannot read them at all, and the
+small model gets 7 of 10 right (Spanish 2/3, French 3/5, Portuguese 2/2). The time must still appear word
+for word in a sentence of the note, in any language. Estimated manager time: about 620 minutes by hand vs 25
 minutes reviewing agent plans (stated assumption: 4 minutes per exception, 0.5 per plan).
 All data is synthetic; this is not real-world accuracy.
 
@@ -74,6 +78,11 @@ works on the rules plan.
 
 ## Other features
 
+- **Overtime forecast (this week, live).** Adds the hours already punched to the shifts still scheduled,
+  flags people who will pass the weekly threshold, and offers "finish early" or "hand over" options priced
+  by the engine. Applying one edits the schedule and writes the audit chain (`/api/wf/forecast`).
+- **Schedule clash fixes.** A clashing schedule is no longer handed to a manager: the agent proposes moving
+  it to where the work was actually punched (or to a free teammate), and the engine proves it.
 - **Overtime prevention (next week).** Finds people scheduled over 40 hours and proposes
   giving the extra shift to a teammate with room and no clash. The engine prices both
   people before and after; the Overview shows the total saving.
@@ -85,6 +94,15 @@ works on the rules plan.
 - **Signed ruleset, derivations, disputes, audit chain.** Pay rules come from a policy a
   human signs; every earnings line shows its formula and clause; disputes never change pay
   silently; every action is hash-chained.
+
+## Workforce modules (web interface)
+
+The Lovable-built web interface lives in [web/](web/README.md) and runs on this same
+backend: **GeoPulse** (geofenced check-in with Inside / Outside / Uncertain), **ZenBreak** (breaks and net
+time from saved timestamps), **SyncShield** (offline queue, idempotent replay, conflict centre),
+**RotaFlow** (shifts and swaps checked against approved leave), **LeaveSync** (balances, overlap and
+staffing rules, maker-checker approval) and **TaskForge**. Rules are enforced in
+`backend/app/workforce.py`, routes are under `/api/wf`, and every action lands in the hash-chained audit.
 
 ## Run it
 

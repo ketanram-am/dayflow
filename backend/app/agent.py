@@ -12,6 +12,9 @@ from .domain import canonical
 
 logger = logging.getLogger("dayflow.agent")
 INJECTION_PATTERNS = [
+    r"ignor[ae]r?\s+(?:todas\s+)?las\s+instrucciones\s+anteriores",
+    r"ignore[zr]?\s+(?:toutes\s+)?les\s+instructions\s+pr[ée]c[ée]dentes",
+    r"ignor[ae]r?\s+(?:todas\s+)?as\s+instru[çc][õo]es\s+anteriores",
     r"ignore\s+(?:all\s+)?(?:previous|prior|system)\s+instructions",
     r"(?:system|developer)\s*(?:prompt|message)\s*:",
     r"(?:approve|commit|write|update|delete)\s+(?:the\s+)?(?:database|change|payroll|record)",

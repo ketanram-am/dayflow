@@ -135,6 +135,9 @@ def create_app(database_path=None):
                 fail("Invalid CSRF token", 403)
             return dict(row)
 
+    from .workforce_api import build_router
+    app.include_router(build_router(current_user, service))
+
     @app.get("/api/health")
     def health():
         return {"status": "ok", "disclaimer": DISCLAIMER}

@@ -60,7 +60,7 @@ class Desk:
         def one(card):
             mine = by_employee[card.employee.id]
             pay = self.svc.pay(card, mine, policy["document"])
-            plan = plan_card(self.svc, card, mine, policy["document"], pay, ai=ai)
+            plan = plan_card(self.svc, card, mine, policy["document"], pay, ai=ai, fleet=cards)
             with self.svc.db.transaction() as cx:
                 cx.execute("INSERT INTO resolutions VALUES(?,?,?,?,?,?,?,?,?,?,?)", (
                     uid("res-"), run_id, card.id, card.revision, canonical(plan),
@@ -210,6 +210,12 @@ class Desk:
         with self.svc.db.transaction() as cx:
             cx.execute("UPDATE resolutions SET state='approved', proposal_id=? WHERE id=?",
                        (proposal_id, resolution_id))
+            for item in plan["items"]:
+                if item["kind"] == "fix_schedule":
+                    audit(cx, user["id"], "schedule_fix_recommended", resolution_id, {
+                        "card_id": card.id, "mode": item["detail"]["mode"], "shift": item["detail"]["shift_id"],
+                        "to": item["detail"]["to_employee_id"],
+                        "note": "Sent to the scheduling team; no schedule was changed here."})
             audit(cx, user["id"], "resolution_approved", resolution_id, {
                 "card_id": card.id, "proposal_id": proposal_id,
                 "kinds": sorted({i["kind"] for i in plan["items"]}),
