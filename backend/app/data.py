@@ -300,3 +300,106 @@ def _build(seed):
             truth[card.id] = {"lane": expected_lane(answers, hostile) if expected else "clear",
                               "hostile": hostile, "language": language, "items": answers}
     return cards, labels, fixes, truth
+
+
+def generate_detection_edge_cases(seed=104729):
+    """Return isolated attendance edge cases with explicit detector labels."""
+    template = generate(seed)[0][0]
+    cases = []
+
+    def make_card(name):
+        card = deepcopy(template)
+        card.id = f"eval-edge-{name}"
+        card.employee.id = card.id
+        identities = {}
+        for index, schedule in enumerate(card.schedules):
+            old_id = schedule.id
+            schedule.id = f"{card.id}-shift-{index}"
+            identities[old_id] = schedule.id
+        for shift in card.shifts:
+            shift.id = identities[shift.id]
+        return card
+
+    def add(name, card, labels):
+        cases.append((name, card, labels))
+
+    for name, endpoint in (("missing_clock_in", "start"), ("missing_clock_out", "end")):
+        card = make_card(name)
+        shift = card.shifts[0]
+        setattr(shift, endpoint, None)
+        add(name, card, {f"missed_punch:missing_endpoint:{shift.id}"})
+
+    card = make_card("missing_both_endpoints")
+    shift = card.shifts[0]
+    shift.start = shift.end = None
+    add("missing_both_endpoints", card, {f"missed_punch:missing_endpoint:{shift.id}"})
+
+    card = make_card("unrecorded_ambiguous_absence")
+    missing = card.shifts.pop(0)
+    card.note = "No punch was recorded; the employee may have been absent or forgotten to clock in."
+    add("unrecorded_ambiguous_absence", card,
+        {f"missed_punch:missed_shift:{missing.id}"})
+
+    card = make_card("confirmed_absence")
+    card.shifts.pop(0)
+    schedule = card.schedules[0]
+    schedule.absence_confirmed = True
+    add("confirmed_absence", card, {f"policy_breach:absence:{schedule.id}"})
+
+    card = make_card("duplicate_identical_punch")
+    duplicate = deepcopy(card.shifts[0])
+    card.shifts.append(duplicate)
+    add("duplicate_identical_punch", card, {
+        f"missed_punch:duplicate:{duplicate.id}",
+        f"schedule_conflict:actual_overlap:{duplicate.id}:{duplicate.id}",
+    })
+
+    card = make_card("duplicate_inconsistent_punch")
+    duplicate = deepcopy(card.shifts[0])
+    duplicate.start += timedelta(minutes=30)
+    duplicate.end += timedelta(minutes=30)
+    for break_interval in duplicate.breaks:
+        break_interval.start += timedelta(minutes=30)
+        break_interval.end += timedelta(minutes=30)
+    card.shifts.append(duplicate)
+    add("duplicate_inconsistent_punch", card, {
+        f"missed_punch:duplicate:{duplicate.id}",
+        f"schedule_conflict:actual_overlap:{duplicate.id}:{duplicate.id}",
+        f"schedule_conflict:variance:{duplicate.id}",
+    })
+
+    card = make_card("overtime_at_boundary")
+    add("overtime_at_boundary", card, set())
+
+    card = make_card("overtime_one_minute_over")
+    shift = card.shifts[0]
+    shift.end += timedelta(minutes=1)
+    add("overtime_one_minute_over", card,
+        {f"overtime_risk:forecast:{card.period_start}"})
+
+    card = make_card("schedule_at_tolerance")
+    shift = card.shifts[0]
+    shift.start += timedelta(minutes=15)
+    shift.end += timedelta(minutes=15)
+    for break_interval in shift.breaks:
+        break_interval.start += timedelta(minutes=15)
+        break_interval.end += timedelta(minutes=15)
+    add("schedule_at_tolerance", card, set())
+
+    card = make_card("schedule_over_tolerance")
+    shift = card.shifts[0]
+    shift.start += timedelta(minutes=16)
+    shift.end += timedelta(minutes=16)
+    for break_interval in shift.breaks:
+        break_interval.start += timedelta(minutes=16)
+        break_interval.end += timedelta(minutes=16)
+    add("schedule_over_tolerance", card,
+        {f"schedule_conflict:variance:{shift.id}"})
+
+    card = make_card("planned_break_mismatch")
+    schedule = card.schedules[0]
+    schedule.planned_unpaid_break_minutes += 15
+    add("planned_break_mismatch", card,
+        {f"policy_breach:planned_break:{schedule.id}"})
+
+    return cases

@@ -121,3 +121,30 @@ def test_api_auth_csrf_and_actual_roundtrip(service):
         assert client.get("/api/cards/e002-2026-10-05").status_code == 403
         assert client.get("/api/audit").status_code == 403
         assert client.post("/api/logout", headers={"Origin": "https://untrusted.test"}).status_code == 403
+
+
+def test_missing_provider_key_fails_without_request(monkeypatch):
+    monkeypatch.setenv("DAYFLOW_LLM_MODE", "openai")
+    monkeypatch.delenv("DAYFLOW_LLM_API_KEY", raising=False)
+    monkeypatch.setattr("app.agent.httpx.post", lambda *args, **kwargs: pytest.fail(
+        "provider must not be called without an API key"))
+    with pytest.raises(ProviderFailure, match="no provider API key is configured"):
+        Provider().extract(Ping, "Test", {})
+
+
+def test_provider_error_is_redacted(monkeypatch, caplog):
+    secret = "synthetic-secret-provider-token"
+    monkeypatch.setenv("DAYFLOW_LLM_MODE", "openai")
+    monkeypatch.setenv("DAYFLOW_LLM_API_KEY", secret)
+    request = httpx.Request("POST", "http://provider.test")
+    failure = httpx.HTTPStatusError(f"Provider rejected {secret}", request=request,
+                                    response=httpx.Response(503, request=request))
+
+    def unavailable(*args, **kwargs):
+        raise failure
+
+    monkeypatch.setattr("app.agent.httpx.post", unavailable)
+    with pytest.raises(ProviderFailure) as error:
+        Provider().extract(Ping, "Test", {})
+    assert secret not in str(error.value)
+    assert secret not in caplog.text
