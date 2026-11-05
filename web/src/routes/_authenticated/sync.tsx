@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { wf } from "@/lib/api";
 import { AppShell, Card, CardTitle } from "@/components/AppShell";
-import { useQueue } from "@/components/PunchPanel";
+import { SimulateOffline, useQueue } from "@/components/PunchPanel";
 import { AIAssistant, AIInsightsCard } from "@/components/ModuleUI";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -158,6 +158,7 @@ function SyncPage() {
             {online ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}{online ? "Online" : "Offline"}
           </span>
           <span className="text-xs text-muted-foreground">Last sync: {lastLogSync || lastSync ? new Date(lastLogSync ?? lastSync!).toLocaleString() : "never"}</span>
+          <SimulateOffline />
           <Button size="sm" onClick={syncNow} disabled={busy || !online}>
             {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <CloudUpload className="mr-1.5 h-3.5 w-3.5" />} Sync Now
           </Button>

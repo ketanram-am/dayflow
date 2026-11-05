@@ -325,3 +325,121 @@ def test_a_request_from_the_servers_own_address_is_allowed_on_any_port(tmp_path)
         body = {"email": "avery@dayflow.demo", "password": "Dayflow-demo-2026!"}
         assert client.post("/api/login", json=body, headers={"origin": "http://127.0.0.1:8123"}).status_code == 200
         assert client.post("/api/login", json=body, headers={"origin": "https://evil.example"}).status_code == 403
+
+
+def test_demo_switch_is_off_by_default_and_limited_to_three_audited_accounts(tmp_path, monkeypatch):
+    monkeypatch.delenv("DAYFLOW_DEMO_SWITCH", raising=False)
+    with TestClient(create_app(tmp_path / "s.sqlite3")) as client:
+        login = client.post("/api/login", json={"email": "avery@dayflow.demo", "password": "Dayflow-demo-2026!"}).json()
+        h = {"x-csrf-token": login["csrf"]}
+        assert client.get("/api/demo/accounts").json() == {"enabled": False, "accounts": []}
+        assert client.post("/api/demo/switch", json={"user_id": "e004"}, headers=h).status_code == 403
+        monkeypatch.setenv("DAYFLOW_DEMO_SWITCH", "1")
+        accounts = client.get("/api/demo/accounts").json()
+        assert [a["id"] for a in accounts["accounts"]] == ["avery", "taylor", "e004"] and accounts["enabled"]
+        assert client.post("/api/demo/switch", json={"user_id": "e001"}, headers=h).status_code == 403
+        assert client.post("/api/demo/switch", json={"user_id": "dayflow-agent"}, headers=h).status_code == 403
+        assert client.post("/api/demo/switch", json={"user_id": "e004"}).status_code == 403          # CSRF still applies
+        moved = client.post("/api/demo/switch", json={"user_id": "e004"}, headers=h).json()
+        assert moved["role"] == "employee" and moved["id"] == "e004"
+        assert client.get("/api/me").json()["id"] == "e004"                                           # the cookie changed
+        client.post("/api/login", json={"email": "avery@dayflow.demo", "password": "Dayflow-demo-2026!"}).json()
+        events = client.get("/api/audit").json()["events"]
+        assert any(e["action"] == "demo_user_switched" and e["details"]["to"] == "e004" for e in events)
+
+
+def test_demo_reset_day_clears_only_my_attendance_and_only_in_demo_mode(tmp_path, monkeypatch):
+    monkeypatch.delenv("DAYFLOW_DEMO_SWITCH", raising=False)
+    with TestClient(create_app(tmp_path / "r.sqlite3")) as client:
+        login = client.post("/api/login", json={"email": "e004@dayflow.demo", "password": "Dayflow-demo-2026!"}).json()
+        h = {"x-csrf-token": login["csrf"]}
+        assert client.post("/api/demo/reset-day", json={}, headers=h).status_code == 403
+        monkeypatch.setenv("DAYFLOW_DEMO_SWITCH", "1")
+        client.get("/api/wf/me")                                            # seeds the demo fortnight
+        before = len(client.get("/api/wf/attendance?limit=500").json())
+        out = client.post("/api/demo/reset-day", json={}, headers=h).json()
+        after = len(client.get("/api/wf/attendance?limit=500").json())
+        assert out["status"] == "reset" and after == before - out["records"]
+        assert client.post("/api/demo/reset-day", json={}).status_code == 403   # CSRF still applies
+
+
+# ---------------------------------------------------------------- demo data and assistants
+def demo_workforce(service, monkeypatch, at=datetime(2026, 11, 5, 12, 17, tzinfo=timezone.utc)):
+    monkeypatch.setenv("DAYFLOW_DEMO_SWITCH", "1")
+    return Workforce(service, Clock(at))
+
+
+def test_demo_today_shows_every_status_and_is_idempotent(service, users, monkeypatch):
+    wf = demo_workforce(service, monkeypatch)
+    from collections import Counter
+    first = Counter(r["status"] for r in wf.employee_overview(users["avery"]))
+    assert {"Present", "Late", "On Break", "Checked Out", "On Leave", "Outside Geofence", "Absent"} <= set(first)
+    assert Workforce(service, wf.clock).employee_overview(users["avery"]) is not None
+    assert Counter(r["status"] for r in wf.employee_overview(users["avery"])) == first
+    alex = next(r for r in wf.employee_overview(users["avery"]) if r["id"] == "e004")
+    assert alex["attendance"] is None  # the demo employee can still check in
+
+
+def test_demo_rota_has_swaps_a_gap_and_a_conflict(service, users, monkeypatch):
+    wf = demo_workforce(service, monkeypatch)
+    swaps = [s for s in wf.swaps(users["avery"]) if s["status"] == "pending"]
+    assert {(s["requester_id"], s["target_employee_id"]) for s in swaps} == {("e004", "e007"), ("e001", None)}
+    from app import wf_insights
+
+    class Off:
+        mode = "off"
+
+    text = wf_insights.answer(wf, Off(), users["avery"], "shifts")["text"]
+    assert "understaffed" in text
+
+
+def test_assistant_answers_the_question_not_a_generic_summary(service, users, monkeypatch):
+    from app import wf_insights
+
+    class Off:
+        mode = "off"
+
+    wf = demo_workforce(service, monkeypatch)
+    swaps = wf_insights.answer(wf, Off(), users["avery"], "shifts", "Which swap requests are pending?")["text"]
+    assert "Alex Rivera asks to swap" in swaps and "anyone available" in swaps
+    unknown = wf_insights.answer(wf, Off(), users["avery"], "tasks", "What is the weather?")["text"]
+    assert unknown.startswith("I can't answer that")
+    today = wf_insights.answer(wf, Off(), users["avery"], "wellness", "How many hours have I worked today?")["text"]
+    assert "No check-in is recorded for you today" in today
+
+
+def test_demo_data_is_off_without_the_demo_flag(service, users, monkeypatch):
+    monkeypatch.delenv("DAYFLOW_DEMO_SWITCH", raising=False)
+    wf = Workforce(service, Clock())
+    assert not [s for s in wf.swaps(users["avery"]) if s["status"] == "pending"]
+
+
+def test_paycheck_template_is_grammatical_and_labels_weeks():
+    from app.ai_features import template_explanation
+    pay = {"status": "complete", "total": "1824.80", "reasons": [], "exceptions": [],
+           "lines": [{"id": f"2026-10-{d}:regular", "week": f"2026-10-{d}", "label": "Worked time", "quantity": "40",
+                      "unit": "hour", "rate": "22.81", "amount": "912.40", "clause": "DF-002"} for d in ("05", "12")]}
+    text = template_explanation(pay).text
+    assert "40 hours" in text and "40 hour " not in text
+    assert "Week of 2026-10-05" in text and "Week of 2026-10-12" in text
+    assert "No exceptions are flagged" in text
+
+
+def test_provider_rejected_key_is_reported_plainly(monkeypatch):
+    import httpx
+    from app.agent import Provider, ProviderFailure
+    from app.domain import Model
+
+    class Out(Model):
+        text: str
+
+    monkeypatch.setenv("DAYFLOW_LLM_MODE", "openai")
+    monkeypatch.setenv("DAYFLOW_LLM_API_KEY", "expired")
+    monkeypatch.setenv("DAYFLOW_LLM_CACHE", "")
+
+    def fake_post(url, **kw):
+        return httpx.Response(401, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    with pytest.raises(ProviderFailure, match="rejected the API key"):
+        Provider().extract(Out, "x", {"unique": "no-cache-hit-401"})

@@ -3,7 +3,7 @@
 **simplified mock policy, not legal advice**
 
 Synthetic data only. Start with a fresh `DAYFLOW_DB` path, `DAYFLOW_LLM_MODE=ollama`,
-`DAYFLOW_LLM_MODEL=qwen3:1.7b` and `DAYFLOW_LLM_CACHE=evidence/llm-cache.json`, then turn AI
+`DAYFLOW_LLM_MODEL=qwen3:8b` and `DAYFLOW_LLM_CACHE=evidence/llm-cache.json`, then turn AI
 on from the Horizon dashboard. The full spoken script is [narration-script.md](narration-script.md).
 
 | Time | Show | Point to make |

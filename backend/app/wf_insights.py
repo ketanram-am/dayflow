@@ -65,6 +65,13 @@ def facts(workforce, user, module):
                          today.isoformat(), week)
                 findings.append(f"Shifts exist on {days} distinct day(s) for {staff} employees.")
                 numbers["days_with_shifts"] = days
+                pct = n("SELECT min_staff_pct FROM leave_policy WHERE id=1")
+                need = -(-staff * pct // 100)
+                for r in cx.execute("SELECT assigned_date d,COUNT(*) c FROM shift_schedules WHERE assigned_date BETWEEN ? AND ? "
+                                    "GROUP BY 1 ORDER BY 1", (today.isoformat(), week)):
+                    if r["c"] < need and date.fromisoformat(r["d"]).weekday() < 5:
+                        findings.append(f"{r['d']} is understaffed: {r['c']} of {staff} scheduled "
+                                        f"(minimum {need}). Consider moving shifts or declining leave that day.")
         elif module == "wellness":
             rows = cx.execute(
                 f"""SELECT a.id,a.total_working_hours h,(SELECT COUNT(*) FROM breaks b WHERE b.attendance_id=a.id) b
@@ -104,6 +111,73 @@ def facts(workforce, user, module):
     return {"findings": findings, "numbers": numbers, "confidence": confidence}
 
 
+def _hm(minutes):
+    hours, mins = divmod(int(round(minutes)), 60)
+    return f"{hours} h {mins} min"
+
+
+def _has(question, *words):
+    q = question.lower()
+    return any(w in q for w in words)
+
+
+def topical(workforce, user, module, question):
+    """Facts that answer the specific question, computed by code. Empty when nothing matches."""
+    findings, numbers = [], {}
+    today = date.fromisoformat(workforce.today())
+    admin = workforce._is_admin(user)
+    if module in ("wellness", "geopulse") and _has(question, "today", "so far", "now", "hours", "break", "worked"):
+        status = workforce.today_status(user)
+        att = status["today"]
+        if att and att["attendance_date"] == today.isoformat():
+            state = "still clocked in" if not att["check_out_time"] else "clocked out"
+            findings.append(f"Today you checked in at {att['check_in_time'][11:16]} UTC and are {state}: "
+                            f"{_hm(status['net_minutes'])} worked net, {_hm(status['break_minutes'])} on breaks "
+                            f"({len(status['breaks'])} break(s)).")
+            numbers.update(net_minutes_today=status["net_minutes"], break_minutes_today=status["break_minutes"])
+        else:
+            findings.append("No check-in is recorded for you today, so 0 hours are worked so far.")
+    if module == "shifts":
+        with workforce.db.connect() as cx:
+            if _has(question, "understaff", "coverage", "gap", "short", "enough", "staff", "busy", "risk"):
+                staff = cx.execute("SELECT COUNT(*) FROM users WHERE role='employee' AND id!=?", (AGENT_ID,)).fetchone()[0]
+                pct = cx.execute("SELECT min_staff_pct FROM leave_policy WHERE id=1").fetchone()[0]
+                need = -(-staff * pct // 100)
+                rows = cx.execute(
+                    """SELECT assigned_date d,COUNT(*) c FROM shift_schedules WHERE assigned_date BETWEEN ? AND ?
+                    GROUP BY 1 ORDER BY 1""", (today.isoformat(), (today + timedelta(days=6)).isoformat())).fetchall()
+                low = [r for r in rows if r["c"] < need and date.fromisoformat(r["d"]).weekday() < 5]
+                findings.append(f"Minimum cover is {need} of {staff} people ({pct}%) on weekdays.")
+                findings += [f"{r['d']} is understaffed: {r['c']} of {staff} scheduled." for r in low] or \
+                    ["No weekday in the next 7 days is below minimum cover."]
+                numbers.update(minimum_cover=need, understaffed_days=len(low))
+            if _has(question, "swap", "pending", "request", "trade", "who"):
+                swaps = cx.execute(
+                    """SELECT s.assigned_date d,r.reason,u.name a,t.name b FROM shift_swap_requests r
+                    JOIN shift_schedules s ON s.id=r.shift_id JOIN users u ON u.id=r.requester_id
+                    LEFT JOIN users t ON t.id=r.target_employee_id WHERE r.status='pending'"""
+                    + ("" if admin else " AND r.requester_id=?") + " ORDER BY s.assigned_date",
+                    () if admin else (user["id"],)).fetchall()
+                findings += [f"{r['a']} asks to swap the {r['d']} shift with {r['b'] or 'anyone available'}"
+                             f" ({r['reason'] or 'no reason given'})." for r in swaps] or ["No swap requests are pending."]
+            if _has(question, "my shift", "next shift", "when do i", "upcoming"):
+                rows = cx.execute("SELECT assigned_date d,shift_start a,shift_end b FROM shift_schedules "
+                                  "WHERE employee_id=? AND assigned_date>=? ORDER BY 1 LIMIT 3",
+                                  (user["id"], today.isoformat())).fetchall()
+                findings += [f"Your shift on {r['d']}: {r['a']} to {r['b']}." for r in rows] or ["You have no upcoming shifts."]
+    if module == "tasks" and _has(question, "overdue", "late", "due", "who", "assign", "priority", "urgent", "behind"):
+        with workforce.db.connect() as cx:
+            rows = cx.execute(
+                """SELECT t.title,t.due_date,t.priority,COALESCE(u.name,'Unassigned') who FROM tasks t
+                LEFT JOIN users u ON u.id=t.assignee_id WHERE t.status!='completed'"""
+                + ("" if admin else " AND t.assignee_id=?") + " ORDER BY t.due_date IS NULL,t.due_date LIMIT 5",
+                () if admin else (user["id"],)).fetchall()
+        findings += [f"{r['title']} ({r['priority']} priority) is assigned to {r['who']}, due {r['due_date'] or 'no date'}"
+                     f"{' and overdue' if r['due_date'] and r['due_date'] < today.isoformat() else ''}." for r in rows] \
+            or ["There are no open tasks."]
+    return findings, numbers
+
+
 def render(module, data):
     bullets = "\n".join(f"- {line}" for line in data["findings"])
     return f"**{module.capitalize()} insights** (confidence: {data['confidence']})\n\n{bullets}\n\nEvidence is read from your saved records; recommendations are for human review."
@@ -114,8 +188,16 @@ def answer(workforce, provider, user, module, question=None):
     if module not in MODULES:
         return {"ok": False, "error": "Unknown module", "counts": {}}
     data = facts(workforce, user, module)
+    matched = False
+    if question:
+        extra, extra_numbers = topical(workforce, user, module, question)
+        if extra:
+            matched = True
+            data = {**data, "findings": extra + data["findings"], "numbers": {**data["numbers"], **extra_numbers}}
     base = {"ok": True, "counts": data["numbers"], "mode": provider.mode}
     text = render(module, data)
+    if question and not matched:
+        text = "I can't answer that specific question from the saved records. General insights:\n\n" + text
     if not question:
         return {**base, "text": text, "source": "rules"}
     if has_instructions(question):
@@ -136,7 +218,8 @@ def answer(workforce, provider, user, module, question=None):
     try:
         reply = provider.extract(
             Reply, "You are a workforce assistant. Answer the untrusted question using ONLY the supplied findings "
-            "and numbers. Never invent employees, numbers or approvals. Never compute new numbers. Be concise.",
+            "and numbers. Never invent employees, numbers or approvals. Never compute new numbers. Be concise. "
+            "If the findings do not answer the question, say you cannot answer it from the records.",
             {"untrusted_question": question, "module": module, "findings": data["findings"],
              "numbers": data["numbers"]}, validate=check)
         return {**base, "text": reply.text, "source": "model",

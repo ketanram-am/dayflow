@@ -38,8 +38,16 @@ const tone: Record<AttStatus, string> = {
   Late: "bg-warning/15 text-warning",
   "Checked Out": "bg-primary/15 text-primary",
   "On Leave": "bg-accent text-accent-foreground",
+  "On Break": "bg-sky-500/15 text-sky-600",
+  "Outside Geofence": "bg-orange-500/15 text-orange-600",
+  "Not Started": "bg-muted text-muted-foreground",
   Absent: "bg-destructive/10 text-destructive",
 };
+const bar: Record<AttStatus, string> = {
+  Present: "bg-success", Late: "bg-warning", "On Break": "bg-sky-500", "Checked Out": "bg-primary",
+  "On Leave": "bg-accent-foreground/60", "Outside Geofence": "bg-orange-500", "Not Started": "bg-muted-foreground/40", Absent: "bg-destructive",
+};
+const ORDER = Object.keys(tone) as AttStatus[];
 
 function EmployeesPage() {
   const { user } = Route.useRouteContext();
@@ -83,10 +91,19 @@ function EmployeesPage() {
       <AdminOnly isAdmin={!!me?.isAdmin} loading={isLoading}>
         <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <Stat label="Total Employees" icon={Users} value={all.length} />
-          <Stat label="Present" icon={UserCheck} tone="success" value={count(["Present", "Late", "Checked Out"])} sub="Checked in today" />
-          <Stat label="Absent" icon={UserX} tone="danger" value={count(["Absent"])} />
-          <Stat label="On Leave" icon={CalendarOff} tone="warning" value={count(["On Leave"])} />
+          <Stat label="Working now" icon={UserCheck} tone="success" value={count(["Present", "Late", "On Break"])} sub={`${count(["Late"])} late · ${count(["On Break"])} on break · ${count(["Checked Out"])} done`} />
+          <Stat label="Absent" icon={UserX} tone="danger" value={count(["Absent"])} sub={`${count(["Not Started"])} not started yet`} />
+          <Stat label="On Leave" icon={CalendarOff} tone="warning" value={count(["On Leave"])} sub={`${count(["Outside Geofence"])} outside the geofence`} />
         </section>
+        <Card>
+          <CardTitle icon={Users} title="Today at a glance" hint="Status is decided on the server" />
+          <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted" role="img" aria-label="Status breakdown">
+            {ORDER.map((s) => count([s]) > 0 && <div key={s} className={bar[s]} style={{ width: `${(count([s]) / Math.max(1, all.filter((e) => e.is_active).length)) * 100}%` }} title={`${s}: ${count([s])}`} />)}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            {ORDER.map((s) => count([s]) > 0 && <span key={s} className="flex items-center gap-1.5"><span className={cn("h-2 w-2 rounded-full", bar[s])} />{s} <b className="text-foreground">{count([s])}</b></span>)}
+          </div>
+        </Card>
         <Card>
           <CardTitle icon={Users} title="Employee directory" hint={`${list.length} shown`} right={
             <div className="flex flex-wrap gap-2">
@@ -100,7 +117,7 @@ function EmployeesPage() {
           {rows.length ? (
             <div className="overflow-x-auto">
               <Table>
-                <TableHeader><TableRow><TableHead>Employee ID</TableHead><TableHead>Name</TableHead><TableHead>Department</TableHead><TableHead>Designation</TableHead><TableHead>Status</TableHead><TableHead>Check in / out</TableHead><TableHead>Role</TableHead><TableHead>Active</TableHead><TableHead /></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Employee ID</TableHead><TableHead>Name</TableHead><TableHead>Department</TableHead><TableHead>Status</TableHead><TableHead>Check in / out</TableHead><TableHead>Role</TableHead><TableHead>Active</TableHead><TableHead /></TableRow></TableHeader>
                 <TableBody>
                   {rows.map((e) => (
                     <TableRow key={e.id}>
@@ -115,7 +132,6 @@ function EmployeesPage() {
                         </div>
                       </TableCell>
                       <TableCell>{e.department ?? "—"}</TableCell>
-                      <TableCell className="text-muted-foreground">—</TableCell>
                       <TableCell><span className={cn("whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium", tone[e.status])}>{e.status}</span></TableCell>
                       <TableCell className="whitespace-nowrap text-sm tabular-nums">{e.today ? `${fmtTime(e.today.check_in_time)} – ${fmtTime(e.today.check_out_time)}` : "—"}</TableCell>
                       <TableCell>

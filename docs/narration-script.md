@@ -8,16 +8,22 @@ a "simplified mock policy, not legal advice".
 
 ## 0. Before you record (10 minutes, offstage)
 
-1. Start Ollama and the app with the recorded model answers:
+1. Start the backend with the recorded model answers (no model server needed), then the web app:
    ```bash
-   export DAYFLOW_LLM_MODE=ollama DAYFLOW_LLM_MODEL=qwen3:1.7b
-   export DAYFLOW_LLM_CACHE=evidence/llm-cache.json DAYFLOW_DB=/tmp/dayflow-demo.sqlite3
+   # terminal 1, repo root
+   export DAYFLOW_LLM_MODE=ollama DAYFLOW_LLM_MODEL=qwen3:8b
+   export DAYFLOW_LLM_CACHE=evidence/llm-cache.json DAYFLOW_DEMO_SWITCH=1
+   export DAYFLOW_DB=/tmp/dayflow-demo-$(date +%s).sqlite3
    .venv/bin/python -m uvicorn app.main:app --app-dir backend --port 8000
+   # terminal 2
+   cd web && npm ci && npm run dev        # open the URL Vite prints
    ```
-   Use a **new** `DAYFLOW_DB` path for each rehearsal so the ruleset starts unsigned and the
-   queue is empty.
-2. Open two browser windows (or profiles): one for **Avery** (reviewer), one for **Alex
-   Rivera** (`e004@dayflow.demo`, employee). Password for all: `Dayflow-demo-2026!`.
+   The `$(date +%s)` gives a **new** database every rehearsal, so the ruleset starts unsigned and the
+   queue is empty. Say in the video that the AI answers are replayed from a recorded run.
+2. One browser window is enough. Sign in once as **Avery** (`avery@dayflow.demo`, password
+   `Dayflow-demo-2026!`). The **View as: Manager | Approver | Employee** toggle in the top bar switches
+   between Avery (manager), Taylor Reed (a second, independent approver) and Alex Rivera (the employee) in one click, with no sign-out. It only appears because the backend was
+   started with `DAYFLOW_DEMO_SWITCH=1` (included above).
 3. As Avery, leave everything else untouched. The AI is switched on later, on the Resolution Queue page.
 
 ---
@@ -136,19 +142,20 @@ for the scheduling team; it never rewrites a schedule by itself."
 
 ## 5. Approve everything that's ready (4:30 – 5:15)
 
-**[DO]** Close the drawer. In *Ready to approve*, click **Approve all**.
+**[DO]** Close the drawer. Click **Approver** in the toggle (Taylor Reed). In *Ready to approve*, click **Approve all**.
 
 **SAY:**
 "Everything in this lane changes nobody's hours. One click. For each one the system
 creates the correction, re-verifies the full pay period and commits it. The agent wrote
-the plans but is not allowed to approve. I'm a different person, so the approval is mine,
-and it's on the record."
+the plans but is not allowed to approve. Taylor, a second administrator, approves, so the person
+who ran the agent is not the one who signs it off, and it's on the record. Three people: the manager runs
+the agent, a second administrator approves, the employee confirms their own hours."
 
 ---
 
 ## 6. The employee answers in one tap (5:15 – 6:30)
 
-**[DO]** Switch to Alex's window. open **Questions for You** in the sidebar.
+**[DO]** Click **Employee** in the **View as** toggle. The page jumps to **Questions for You**.
 
 **SAY:**
 "Now I'm Alex. Instead of a manager chasing me, I get one question: *'You wrote "I finished
@@ -157,7 +164,7 @@ at 17:50". We set your clock-out on Wednesday to 17:50. Is that right?'* I tap y
 **[DO]** Click **Yes, that's right**. (Alternative: type a different time and click **Use
 this time** to show a correction.)
 
-**[DO]** Switch back to Avery. **Resolution Queue**: Alex is now in *Ready to approve*.
+**[DO]** Click **Approver** in the toggle. Open **Resolution Queue**: Alex is now in *Ready to approve*.
 Click **Approve**.
 
 **SAY:**
@@ -204,7 +211,7 @@ until scheduling acts, and sending it is recorded."
 
 ## 9. Measured, not claimed (7:45 – 9:00)
 
-**[DO]** **Scorecard**. Point at **Resolution agent: AI vs rules only**.
+**[DO]** **Scorecard**. Point at **Measured, not claimed** (rules only against AI).
 
 **SAY:**
 "Every exception in this data set has a labelled correct answer, so we can measure the
@@ -246,7 +253,7 @@ corrections, proves every one with a pay engine, and sends each card to the righ
 | How do you stop made-up times? | Code requires a sentence in the note that states that exact time, and the pay engine re-checks the result. Measured: 0 invented times. |
 | Why is a missed meal break "paid", not fixed? | Moving punches to avoid a premium is time-shaving. The compliant fix is to pay the premium, which the engine already includes. |
 | Why do employees confirm? | Any change to worked time needs the employee's confirmation of that exact proposal. |
-| Which model? | Open-weight qwen3:1.7b (Apache-2.0) locally via Ollama; any OpenAI-compatible endpoint works. Always check the model's licence and acceptable-use terms. |
+| Which model? | Open-weight qwen3:8b (Apache-2.0) locally via Ollama; any OpenAI-compatible endpoint works. Always check the model's licence and acceptable-use terms. |
 | What if the AI is off or down? | The rules plan still covers everything; only note-dependent answers lose accuracy (89% → 32%). |
 | What's new compared with Dayforce or UKG? | Detection and approval routing exist. The new part is turning the employee's own explanation into a grounded correction, proving it before anyone sees it, and publishing the measured comparison. |
 

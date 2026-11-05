@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { auth, wf } from "@/lib/api";
+import { ApiError, auth, wf } from "@/lib/api";
 import type { Attendance as AttendanceRow, Employee as EmployeeRow, VerifyResult } from "@/lib/types";
 
 export type Employee = EmployeeRow;
@@ -45,6 +45,24 @@ export function useToday(userId: string) {
 }
 
 export type GeoFix = { lat: number; lng: number; accuracy: number; at: number };
+
+/* ---------- connectivity (real or simulated for demos) ---------- */
+const SIM_KEY = "df_sim_offline";
+export function isSimOffline(): boolean {
+  try { return localStorage.getItem(SIM_KEY) === "1"; } catch { return false; }
+}
+export function setSimOffline(on: boolean) {
+  try { localStorage.setItem(SIM_KEY, on ? "1" : "0"); } catch { /* storage unavailable */ }
+  window.dispatchEvent(new Event("df-net"));
+}
+export function isOnline(): boolean {
+  return navigator.onLine && !isSimOffline();
+}
+export function isNetworkError(e: unknown): boolean {
+  if (!isOnline()) return true;
+  if (e instanceof ApiError) return e.status === 0;
+  return /fetch|network|could not reach/i.test(e instanceof Error ? e.message : String(e));
+}
 
 export function getPosition(): Promise<GeoFix> {
   return new Promise((resolve, reject) => {
@@ -201,6 +219,7 @@ export async function flushQueue(onProgress?: (done: number, total: number) => v
   // A shared device must never replay one employee's punches under another employee's session.
   const me = auth.current()?.id;
   const all = readQueue();
+  if (!isOnline()) return { synced: 0, failed: all.length };
   const q = all.filter((i) => !i.userId || i.userId === me);
   const left: QueuedPunch[] = all.filter((i) => i.userId && i.userId !== me);
   let synced = 0;
@@ -220,7 +239,7 @@ export async function flushQueue(onProgress?: (done: number, total: number) => v
       logSyncEvent(item, attempt, "success");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (/fetch|network/i.test(msg)) {
+      if (isNetworkError(e)) {
         left.push({ ...item, attempts: attempt, lastTry: Date.now() });
         logSyncEvent(item, attempt, "retry", msg);
       } else {
