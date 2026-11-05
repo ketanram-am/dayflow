@@ -1,6 +1,7 @@
 """Resolution agent: data truth, rules plans, AI note reading, desk workflow, API roles."""
 
 from collections import Counter
+import time
 
 from fastapi.testclient import TestClient
 import pytest
@@ -201,10 +202,12 @@ def test_api_agent_endpoints(service):
                                                                  "reviewed": True})
         run = client.post("/api/agent/runs", json={"use_ai": False}).json()
         assert run["mode"] == "rules"
-        for _ in range(100):
+        deadline = time.monotonic() + 90   # a slow CI runner needs real time, not a fixed number of polls
+        while True:
             latest = client.get("/api/agent/runs/latest").json()["run"]
-            if latest["status"] != "running":
+            if latest["status"] != "running" or time.monotonic() > deadline:
                 break
+            time.sleep(0.25)
         assert latest["status"] == "finished"
         items = client.get("/api/resolutions").json()["items"]
         assert len(items) == 60
