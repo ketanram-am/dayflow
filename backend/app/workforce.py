@@ -71,7 +71,10 @@ def request_days(row, holidays=()):
 
 
 def _dt(value):
-    return datetime.fromisoformat(value).astimezone(timezone.utc)
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:  # a time with no zone is read as UTC, never as the server's local time
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _hhmm(value, label):
@@ -164,9 +167,8 @@ class Workforce:
                 if not name or len(name) > 120:
                     fail("Name must be 1 to 120 characters", 422)
                 cx.execute("UPDATE users SET name=? WHERE id=?", (name, target_id))
-            if "employee_id" in changes and changes["employee_id"]:
-                if person["employee_id"] and person["employee_id"] != changes["employee_id"]:
-                    fail("The employee ID is linked to payroll records and cannot be changed", 409)
+            if changes.get("employee_id") and changes["employee_id"] != person["employee_id"]:
+                fail("The employee ID is linked to payroll records and cannot be changed", 409)
             for field in ("is_active", "role"):
                 if field in changes and not self._is_admin(user):
                     fail("Only administrators can change access", 403)
@@ -176,6 +178,8 @@ class Workforce:
                 cx.execute("INSERT INTO profiles(user_id,is_active,created_at) VALUES(?,?,?) "
                            "ON CONFLICT(user_id) DO UPDATE SET is_active=excluded.is_active",
                            (target_id, int(bool(changes["is_active"])), stamp()))
+                if not changes["is_active"]:
+                    cx.execute("DELETE FROM sessions WHERE user_id=?", (target_id,))
             if "role" in changes:
                 role = "reviewer" if changes["role"] == "admin" else "employee"
                 if role == "employee" and person["role"] == "admin" and cx.execute(
@@ -253,11 +257,15 @@ class Workforce:
         if kind not in ("check_in", "check_out"):
             return {"ok": False, "code": "invalid", "message": "Unknown action"}
         received = self.clock()
-        when = _dt(captured_at) if captured_at else received
+        try:
+            when = _dt(captured_at) if captured_at else received
+        except ValueError:
+            return {"ok": False, "code": "invalid", "message": "captured_at must be an ISO timestamp"}
+        # Event ids are unique per employee: the stored value carries the owner so two people can never collide.
+        event_id = f"{user['id']}:{event_id}" if event_id else None
+        column = "check_in_event_id" if kind == "check_in" else "check_out_event_id"
         with self.db.transaction() as cx:
-            if event_id and cx.execute(
-                    "SELECT 1 FROM attendance WHERE employee_id=? AND (check_in_event_id=? OR check_out_event_id=?)",
-                    (user["id"], event_id, event_id)).fetchone():
+            if event_id and cx.execute(f"SELECT 1 FROM attendance WHERE {column}=?", (event_id,)).fetchone():
                 return {"ok": True, "code": "duplicate", "message": "This punch was already recorded"}
             if when > received + SYNC_FUTURE or when < received - SYNC_PAST:
                 return {"ok": False, "code": "window",
@@ -584,6 +592,8 @@ class Workforce:
                 if not swap["target_employee_id"]:
                     fail("Choose a colleague for this swap before approving", 409)
                 shift = cx.execute("SELECT * FROM shift_schedules WHERE id=?", (swap["shift_id"],)).fetchone()
+                if shift["employee_id"] != swap["requester_id"]:
+                    fail("The shift has moved to someone else since this request; reject it and ask again", 409)
                 self._check_target(cx, swap["target_employee_id"], shift, swap["requester_id"])
                 cx.execute("UPDATE shift_schedules SET employee_id=? WHERE id=?",
                            (swap["target_employee_id"], swap["shift_id"]))
@@ -648,7 +658,9 @@ class Workforce:
     def delete_holiday(self, user, holiday_id):
         reviewer(user)
         with self.db.transaction() as cx:
-            cx.execute("DELETE FROM holidays WHERE id=?", (holiday_id,))
+            if not cx.execute("DELETE FROM holidays WHERE id=?", (holiday_id,)).rowcount:
+                fail("Holiday not found", 404)
+            audit(cx, user["id"], "holiday_deleted", holiday_id, {})
         return {"status": "deleted"}
 
     def balances(self, user, employee_id=None, year=None):
@@ -695,6 +707,8 @@ class Workforce:
             fail("Dates must look like 2026-11-12", 422)
         if last < first:
             fail("End date must be on or after start date", 422)
+        if first.year != last.year:
+            fail("Leave that crosses New Year must be requested as two requests, one per year", 422)
         duration = body.get("duration", "full")
         if duration != "full" and start != end:
             fail("Half-day and hourly leave must be a single day", 422)
@@ -716,7 +730,7 @@ class Workforce:
                 fail("This overlaps another pending or approved leave request")
             kind = body["leave_type"]
             if kind in LEAVE_ALLOWANCE:
-                left = self.balances(user)[kind]["remaining"]
+                left = self.balances(user, year=first.year)[kind]["remaining"]
                 if days > left:
                     fail(f"Only {left:g} {kind} day(s) remain; this request needs {days:g}")
             lid = uid("lv-")
@@ -774,10 +788,15 @@ class Workforce:
 
     def team_calendar(self, user, start, end):
         with self.db.connect() as cx:
-            return [dict(r) for r in cx.execute(
+            rows = [dict(r) for r in cx.execute(
                 """SELECT l.employee_id,u.name AS full_name,l.start_date,l.end_date,l.approval_status,l.leave_type
                 FROM leave_requests l JOIN users u ON u.id=l.employee_id
                 WHERE l.approval_status IN ('approved','pending') AND l.start_date<=? AND l.end_date>=?""", (end, start))]
+        if not self._is_admin(user):  # colleagues see who is away, never why (sick leave is private)
+            for row in rows:
+                if row["employee_id"] != user["id"]:
+                    row["leave_type"] = "other"
+        return rows
 
     # ----------------------------------------------------------------- TaskForge
     def tasks(self, user):
@@ -816,6 +835,8 @@ class Workforce:
             detail_fields = {"title", "project", "tag", "priority", "assignee_id", "due_date"}
             if not admin and detail_fields & set(changes):
                 fail("Only administrators can change task details", 403)
+            if changes.get("assignee_id") and not self._employee(cx, changes["assignee_id"]):
+                fail("Assignee not found", 422)
             values = {**dict(task), **changes}
             if values["status"] == "completed" and task["status"] != "completed":
                 values["completed_at"], values["progress"] = stamp(), 100
@@ -903,6 +924,9 @@ class Workforce:
             for row in cx.execute("SELECT id FROM users WHERE id!=?", (AGENT_ID,)).fetchall():
                 cx.execute("INSERT OR IGNORE INTO profiles(user_id,department,is_active,created_at) VALUES(?,?,1,?)",
                            (row["id"], departments.get(row["id"], "Operations"), stamp()))
+            if len(people) < 6:  # too small for the demo fortnight; profiles are enough
+                cx.execute("INSERT INTO meta VALUES('workforce_seed','1')")
+                return
             today = self.clock().date()
             for back in range(14, 0, -1):
                 day = today - timedelta(days=back)

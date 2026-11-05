@@ -187,9 +187,14 @@ and the provenance text, always visible.
 10. **Model quality is small-model quality.** The 1.7B model is graded on synthetic notes in four
     languages. A bigger open-weight model (verify its licence and acceptable-use terms) would raise the
     non-English score; the grounding checks make that a safe swap.
-11. **Mobile.** The employee flows (check-in, one-tap answers) should be designed phone-first; the
+11. **Office timezone.** Punch dates and "late after 09:30" use UTC. Store the office timezone and derive the
+    attendance day from it before real use; a 01:00 local punch can land on the previous UTC day.
+12. **Approval is two steps.** Approving a resolution commits the correction and then marks the plan approved in a
+    second transaction. If the second step failed, the plan would stay open although the correction is committed;
+    merge both into one transaction.
+13. **Mobile.** The employee flows (check-in, one-tap answers) should be designed phone-first; the
     admin queue can stay desktop-first.
-12. **Notifications.** Employees currently discover questions when they open the app. A push or email
+14. **Notifications.** Employees currently discover questions when they open the app. A push or email
     nudge is the obvious next step, and PR #8/#9 from the team already starts that backend.
 
 ## Rules to repeat in every prompt if Lovable drifts

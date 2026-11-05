@@ -249,3 +249,60 @@ def test_every_read_endpoint_works_for_an_admin_and_an_employee(wf, users):
     assert all(r["employee_id"] == "e010" for r in wf.leave_requests(users["e010"]))
     assert len(wf.employee_overview(users["avery"])) == 32
     assert wf.attendance_report(users["avery"], "2026-10-20", "2026-11-04")
+
+
+# ---- regressions from the independent review
+def test_deactivated_accounts_lose_their_session_and_cannot_sign_in(tmp_path):
+    with TestClient(create_app(tmp_path / "d.sqlite3")) as client:
+        admin = client.post("/api/login", json={"email": "avery@dayflow.demo", "password": "Dayflow-demo-2026!"}).json()
+        h = {"x-csrf-token": admin["csrf"]}
+        assert client.patch("/api/wf/employees/e010", json={"is_active": False}, headers=h).status_code == 200
+        client.post("/api/logout", headers=h)
+        assert client.post("/api/login", json={"email": "e010@dayflow.demo", "password": "Dayflow-demo-2026!"}).status_code == 403
+
+
+def test_event_ids_never_collide_across_people_or_kinds(configured, users, clock):
+    first = configured.punch(users["e025"], "check_in", *near(), 10, event_id="same-id")
+    other = configured.punch(users["e026"], "check_in", *near(), 10, event_id="same-id")
+    assert first["ok"] and other["ok"] and other["code"] == "recorded"      # no 500, no blocking
+    clock.at = NOW + timedelta(hours=8)
+    out = configured.punch(users["e025"], "check_out", *near(), 10, event_id="same-id")
+    assert out["ok"] and out["code"] == "recorded"                          # same id for the other kind is fine
+
+
+def test_bad_timestamps_and_explicit_nulls_are_clean_errors(configured, users, tmp_path):
+    assert configured.punch(users["e025"], "check_in", *near(), 10, "garbage")["code"] == "invalid"
+    naive = configured.punch(users["e025"], "check_in", *near(), 10, "2026-11-04T09:30:00", "n1")
+    assert naive["ok"] and naive["attendance"]["check_in_time"].endswith("+00:00")   # read as UTC
+    with TestClient(create_app(tmp_path / "n.sqlite3")) as client:
+        admin = client.post("/api/login", json={"email": "avery@dayflow.demo", "password": "Dayflow-demo-2026!"}).json()
+        h = {"x-csrf-token": admin["csrf"]}
+        assert client.patch("/api/wf/employees/avery", json={"role": None, "full_name": None}, headers=h).status_code == 200
+        assert client.get("/api/wf/me").json()["isAdmin"] is True            # null did not demote anyone
+        tid = client.post("/api/wf/tasks", json={"title": "t"}, headers=h).json()["id"]
+        assert client.patch(f"/api/wf/tasks/{tid}", json={"status": None, "assignee_id": "nobody"}, headers=h).status_code == 422
+
+
+def test_a_stale_swap_cannot_move_a_shift_that_changed_hands(wf, users):
+    wf.save_shift(users["avery"], "e010", "2026-12-14", "09:00", "17:00")
+    shift = next(s for s in wf.shifts(users["e010"], "2026-12-14", "2026-12-14"))
+    swap = wf.request_swap(users["e010"], shift["id"], "e011", "x")
+    with wf.db.transaction() as cx:                       # the shift changes owner some other way
+        cx.execute("UPDATE shift_schedules SET employee_id='e012' WHERE id=?", (shift["id"],))
+    assert code(wf.review_swap, users["avery"], swap["id"], "approved") == 409
+
+
+def test_leave_cannot_cross_new_year_and_future_year_balances_are_enforced(wf, users):
+    assert code(wf.request_leave, users["e010"], {"leave_type": "annual", "start_date": "2026-12-30", "end_date": "2027-01-04"}) == 422
+    wf.update_policy(users["avery"], {"annual_days": 1})
+    wf.request_leave(users["e010"], {"leave_type": "annual", "start_date": "2027-02-01"})
+    assert code(wf.request_leave, users["e010"], {"leave_type": "annual", "start_date": "2027-02-03"}) == 409
+
+
+def test_colleagues_see_that_someone_is_away_but_not_why(wf, users):
+    leave = wf.request_leave(users["e010"], {"leave_type": "sick", "start_date": "2026-12-10"})
+    wf.review_leave(users["avery"], leave["id"], "approved")
+    seen = [r for r in wf.team_calendar(users["e011"], "2026-12-01", "2026-12-31") if r["employee_id"] == "e010"]
+    assert seen and seen[0]["leave_type"] == "other"
+    assert [r["leave_type"] for r in wf.team_calendar(users["avery"], "2026-12-01", "2026-12-31")
+            if r["employee_id"] == "e010"] == ["sick"]

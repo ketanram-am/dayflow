@@ -80,12 +80,14 @@ def for_question(cx, card, question, resolution_id):
 def dispatch(db, ids):
     """Send after the database commit so SMTP never holds the database lock."""
     with db.connect() as cx:
-        for identity in ids:
-            row = cx.execute("SELECT n.subject,n.body,u.email FROM notifications n JOIN users u "
-                             "ON u.id=n.recipient_id WHERE n.id=?", (identity,)).fetchone()
-            if row:
-                cx.execute("UPDATE notifications SET delivery=? WHERE id=?",
-                           (send_email(row["email"], row["subject"], row["body"]), identity))
+        rows = [cx.execute("SELECT n.id,n.subject,n.body,u.email FROM notifications n JOIN users u "
+                           "ON u.id=n.recipient_id WHERE n.id=?", (identity,)).fetchone() for identity in ids]
+    results = [(send_email(r["email"], r["subject"], r["body"]), r["id"]) for r in rows if r]   # no lock held
+    try:
+        with db.transaction() as cx:  # one short write; a failure here must not undo a committed approval
+            cx.executemany("UPDATE notifications SET delivery=? WHERE id=?", results)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def listing(db, user, limit=50):

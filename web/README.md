@@ -8,7 +8,7 @@ running on Dayflow's FastAPI backend. One backend, one database, one audit chain
 .venv/bin/python -m uvicorn app.main:app --app-dir backend --port 8000
 
 # terminal 2: this UI
-cd web && npm ci && npm run dev      # http://localhost:8080  (proxies /api to :8000)
+cd web && npm ci && npm run dev      # open the URL Vite prints; /api is proxied to :8000
 DAYFLOW_API=http://127.0.0.1:8020 npm run dev    # point the proxy at another backend port
 ```
 

@@ -84,3 +84,19 @@ def test_forecast_routes_respect_roles(tmp_path):
         assert body["threshold_minutes"] == 2400 and "flagged" in body
         bad = client.post("/api/wf/forecast/apply", json={"option_id": "x"}, headers={"x-csrf-token": login["csrf"]})
         assert bad.status_code == 422
+
+
+def test_forecast_apply_closes_stale_swaps_and_never_hands_over_todays_shift(wf, users):
+    report = Forecast(wf).build(users["avery"])
+    today = report["today"]
+    assert all(o["date"] != today for f in report["flagged"] for o in f["options"] if o["kind"] == "hand_over")
+    option = next(o for f in report["flagged"] for o in f["options"] if o["kind"] == "hand_over")
+    eid = option["id"].split(":")[1]
+    shift = next(s for s in wf.shifts(users["avery"], option["date"], option["date"]) if s["employee_id"] == eid)
+    wf.request_swap(service_user(wf, eid), shift["id"], None, "stale")
+    Forecast(wf).apply(users["avery"], option["id"])
+    assert not [s for s in wf.swaps(users["avery"]) if s["shift_id"] == shift["id"] and s["status"] == "pending"]
+
+
+def service_user(wf, user_id):
+    return wf.svc.user(user_id)

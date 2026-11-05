@@ -158,8 +158,9 @@ def build_router(current_user, service):
             request.app.state.workforce = Workforce(svc)
         return request.app.state.workforce
 
-    def patch(model):
-        return model.model_dump(exclude_unset=True)
+    def patch(model, nullable=()):
+        """Only the fields the client sent. An explicit null is dropped unless the field may be cleared."""
+        return {k: v for k, v in model.model_dump(exclude_unset=True).items() if v is not None or k in nullable}
 
     # --- people
     @router.get("/me")
@@ -203,7 +204,7 @@ def build_router(current_user, service):
 
     @router.put("/office")
     def set_office(payload: OfficeInput, user=Depends(current_user), w=Depends(wf)):
-        return w.set_office(user, patch(payload))
+        return w.set_office(user, patch(payload, ("latitude", "longitude")))
 
     @router.post("/location/verify")
     def verify(payload: Verify, user=Depends(current_user), w=Depends(wf)):
@@ -358,7 +359,7 @@ def build_router(current_user, service):
 
     @router.patch("/tasks/{identity}")
     def update_task(identity: str, payload: TaskPatch, user=Depends(current_user), w=Depends(wf)):
-        return w.update_task(user, identity, patch(payload))
+        return w.update_task(user, identity, patch(payload, ("assignee_id", "due_date")))
 
     @router.delete("/tasks/{identity}")
     def delete_task(identity: str, user=Depends(current_user), w=Depends(wf)):

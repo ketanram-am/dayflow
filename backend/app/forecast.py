@@ -159,10 +159,11 @@ class Forecast:
                             f"finish_early:{eid}:{last}", "finish_early", employee, cost_before, cost_after,
                             ot_before, ot_after, cut, limit,
                             f"End {employee.name.split()[0]}'s {last:%a} shift at {new_end} instead of {old_end}",
-                            {"date": last.isoformat(), "new_end": new_end, "minutes_cut": cut}))
-                    for peer_id, peer in sorted(projections.items(),
+                            {"date": last.isoformat(), "new_end": new_end, "old_end": old_end,
+                             "minutes_cut": cut}))
+                    for peer_id, peer in ([] if last <= today else sorted(projections.items(),
                                                 key=lambda kv: (roster[kv[0]].department != employee.department,
-                                                                kv[1]["projected"])):
+                                                                kv[1]["projected"]))):
                         if peer_id == eid:
                             continue
                         moved = last_info["remaining"]
@@ -222,17 +223,19 @@ class Forecast:
     def apply(self, user, option_id):
         """A manager applies one option. Recomputed server-side; the client only names it."""
         reviewer(user)
-        report = self.build(user)
-        option = next((o for f in report["flagged"] for o in f["options"] if o["id"] == option_id), None)
-        if not option:
-            fail("That option is no longer available; the forecast has changed", 409)
         _, eid, _day, *rest = option_id.split(":")
-        with self.w.db.transaction() as cx:
+        with self.w.db.transaction() as cx:  # the write lock is held while the forecast is rebuilt and applied
+            report = self.build(user)
+            option = next((o for f in report["flagged"] for o in f["options"] if o["id"] == option_id), None)
+            if not option:
+                fail("That option is no longer available; the forecast has changed", 409)
             shift = cx.execute("SELECT * FROM shift_schedules WHERE employee_id=? AND assigned_date=?",
                                (eid, option["date"])).fetchone()
             if not shift:
                 fail("The shift no longer exists", 409)
             if option["kind"] == "finish_early":
+                if shift["shift_end"] != option["old_end"]:
+                    fail("The shift was edited since the forecast; refresh and try again", 409)
                 cx.execute("UPDATE shift_schedules SET shift_end=? WHERE id=?", (option["new_end"], shift["id"]))
                 from .db import audit
                 audit(cx, user["id"], "overtime_prevented", shift["id"], {
@@ -242,6 +245,8 @@ class Forecast:
                 target = option["to_employee_id"]
                 self.w._check_target(cx, target, shift, eid)
                 cx.execute("UPDATE shift_schedules SET employee_id=? WHERE id=?", (target, shift["id"]))
+                cx.execute("UPDATE shift_swap_requests SET status='rejected',reviewed_by=? "
+                           "WHERE shift_id=? AND status='pending'", (user["id"], shift["id"]))
                 from .db import audit, now as stamp, uid
                 cx.execute("INSERT INTO shift_swap_requests VALUES(?,?,?,?,?,'approved',?,?)",
                            (uid("swp-"), shift["id"], eid, target,
