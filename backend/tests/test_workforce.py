@@ -318,3 +318,10 @@ def test_overview_status_is_decided_on_the_server(wf, users):
     live = {"check_in_time": "2026-11-04T09:10:00+00:00", "check_out_time": None}
     assert status(live, False, "09:00:00") == "Late" and status(live, False, "09:30:00") == "Present"
     assert status({**live, "check_in_time": "2026-11-04T09:45:00+00:00"}, False, None) == "Late"   # default 09:30
+
+
+def test_a_request_from_the_servers_own_address_is_allowed_on_any_port(tmp_path):
+    with TestClient(create_app(tmp_path / "o.sqlite3"), base_url="http://127.0.0.1:8123") as client:
+        body = {"email": "avery@dayflow.demo", "password": "Dayflow-demo-2026!"}
+        assert client.post("/api/login", json=body, headers={"origin": "http://127.0.0.1:8123"}).status_code == 200
+        assert client.post("/api/login", json=body, headers={"origin": "https://evil.example"}).status_code == 403

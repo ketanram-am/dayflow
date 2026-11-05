@@ -96,7 +96,8 @@ def create_app(database_path=None):
                 "http://localhost:5173", "http://127.0.0.1:5173",
                 "http://localhost:8000", "http://127.0.0.1:8000",
             } | set(filter(None, os.environ.get("DAYFLOW_ALLOWED_ORIGINS", "").split(",")))
-            if origin and origin not in allowed:
+            same_origin = origin == f"{request.url.scheme}://{request.headers.get('host', '')}"
+            if origin and origin not in allowed and not same_origin:
                 return Response("Origin not allowed", status_code=403)
             try:
                 length = int(request.headers.get("content-length", "0"))
