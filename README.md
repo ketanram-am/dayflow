@@ -210,6 +210,15 @@ publishing a measured comparison against a rules-only baseline.
 All code here is original. No GPL/AGPL code was copied. Direct dependencies: FastAPI,
 Pydantic, HTTPX, Uvicorn, React, Vite, TypeScript, motion, Lucide.
 
+## Team
+
+| Contributor | Work |
+|---|---|
+| [Ketan Ram Amara](https://github.com/ketanram-am) | Pay engine, resolution agent, grounded AI, backend, workforce modules, evaluation, integration |
+| [Harshitha S](https://github.com/harshitha792) | Web app design and front end: all screens, including the resolution queue, overtime, policy, pay, audit and scorecard |
+| [Mohammed Raqheebuddin](https://github.com/raqheeb) | Twelve detection edge cases, aggregate metrics, provider error tests |
+| [Praveen Raj S](https://github.com/Praveenraj2206) | Approval notifications |
+
 ## Deliverables
 
 - [Five-slide presentation](docs/deck.html)
