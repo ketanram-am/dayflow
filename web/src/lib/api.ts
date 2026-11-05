@@ -27,7 +27,8 @@ export function onAuthChange(fn: (user: T.SessionUser | null) => void) {
 }
 
 export async function request<R>(method: string, path: string, body?: unknown): Promise<R> {
-  const res = await fetch(`/api${path}`, {
+  let res: Response;
+  try { res = await fetch(`/api${path}`, {
     method,
     credentials: "include",
     headers: {
@@ -35,16 +36,21 @@ export async function request<R>(method: string, path: string, body?: unknown): 
       ...(method !== "GET" && csrf ? { "X-CSRF-Token": csrf } : {}),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
+  }); } catch {
+    throw new ApiError("Could not reach the Dayflow server. Check your connection and backend address.", 0);
+  }
   if (res.status === 401 && session) emit(null);
   const text = await res.text();
   let data: unknown = null;
   try { data = text ? JSON.parse(text) : null; } catch { /* non-JSON error body */ }
+  if (res.ok && data === null && res.status !== 204) {
+    throw new ApiError("Dayflow returned an invalid response. Check that /api points to the FastAPI backend.", res.status);
+  }
   if (!res.ok) {
     const detail = (data as { detail?: unknown } | null)?.detail;
     const message = typeof detail === "string" ? detail
       : Array.isArray(detail) ? detail.map((d: { msg?: string }) => d.msg).filter(Boolean).join("; ")
-      : text.slice(0, 200) || res.statusText;
+      : text.trimStart().startsWith("<") ? "Could not reach the Dayflow server. Is the backend running?" : text.slice(0, 200) || res.statusText;
     throw new ApiError(message || "Request failed", res.status);
   }
   return data as R;
@@ -72,8 +78,9 @@ export const auth = {
     return session ?? null;
   },
   async login(email: string, password: string) {
-    emit(await request<T.SessionUser>("POST", "/login", { email: email.trim(), password }));
-    return session!;
+    const user = await request<T.SessionUser>("POST", "/login", { email: email.trim(), password });
+    emit(user);
+    return user;
   },
   async logout() {
     try { await request("POST", "/logout", {}); } finally { emit(null); }
