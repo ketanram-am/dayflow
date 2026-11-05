@@ -22,8 +22,8 @@ DEFAULT_KIND = {
     "actual_overlap": "remove_duplicate", "meal": "pay_premium", "variance": "accept_as_recorded",
     "unscheduled": "accept_as_recorded", "absence": "accept_as_recorded",
     "forecast": "accept_as_recorded", "long_shift": "accept_as_recorded",
-    "missed_shift": "ask_employee", "schedule_overlap": "needs_manager",
-    "salary_roster": "needs_manager",
+    "missed_shift": "ask_employee", "schedule_overlap": "fix_schedule",
+    "salary_roster": "fix_schedule",
 }
 # Any edit to worked time needs the employee to confirm the exact proposal (DF-006).
 NEEDS_EMPLOYEE = {"ask_employee", "add_shift", "fill_punch"}
@@ -38,6 +38,52 @@ def _clock(value, zone, style):
     suffix = "am" if local.hour < 12 else "pm"
     return {"24": f"{local:%H:%M}", "12": f"{h12}:{local:%M} {suffix}",
             "bare": f"{h12}:{local:%M}"}[style]
+
+
+DAYS = {
+    "es": ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"],
+    "fr": ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"],
+    "pt": ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira",
+           "sábado", "domingo"],
+}
+
+
+def _pick_language(rng):
+    """About half of the notes that state something are not in English. Own RNG stream, so every
+    payroll fact and detector label stays identical to before."""
+    roll, sub = rng.random(), rng.random()
+    if roll >= 0.5:
+        return "en"
+    return "es" if sub < 0.4 else "fr" if sub < 0.7 else "pt"
+
+
+def _localized_clock(lang, value, zone, roll):
+    local = value.astimezone(zone)
+    plain = f"{local:%H:%M}"
+    if lang == "fr":
+        return f"{local.hour}h{local:%M}"
+    if lang == "es" and roll < 0.5:
+        part = "de la mañana" if local.hour < 12 else "de la tarde" if local.hour < 20 else "de la noche"
+        return f"las {local.hour % 12 or 12}:{local:%M} {part}"
+    return f"las {plain}" if lang == "es" else f"às {plain}"
+
+
+def _note_in(lang, kind, weekday, when=None):
+    day = DAYS[lang][weekday]
+    if kind == "out":
+        return {
+            "es": f"Olvidé marcar la salida el {day}; salí a {when}.",
+            "fr": f"Je n'ai pas pu pointer ma sortie {day}, j'ai fini à {when}.",
+            "pt": f"Esqueci de registrar a saída na {day}; saí {when}.",
+        }[lang]
+    return {
+        ("es", "sick"): f"Estuve enfermo el {day} y no pude ir a trabajar.",
+        ("fr", "sick"): f"J'étais malade {day} et je n'ai pas pu venir.",
+        ("pt", "sick"): f"Estive doente na {day} e não pude ir.",
+        ("es", "worked"): f"Trabajé mi turno normal el {day}, pero mi tarjeta no se registró.",
+        ("fr", "worked"): f"J'ai travaillé mon service normal {day}, mais mon badge n'a pas fonctionné.",
+        ("pt", "worked"): f"Trabalhei meu turno normal na {day}, mas meu crachá não registrou.",
+    }[(lang, kind)]
 
 
 def expected_lane(items, hostile=False):
@@ -103,6 +149,8 @@ def _build(seed):
             answers = {}
             # Separate stream so rates and generic notes stay identical to earlier seeds.
             facts = random.Random(seed * 1009 + index * 37 + period)
+            langs = random.Random(seed * 104729 + index * 53 + period)  # note language only
+            language = "en"
             mode = (index // 3 + index % 3 * 2 + period) % 6
             non_exempt = employment != Employment.salaried_exempt
 
@@ -125,6 +173,11 @@ def _build(seed):
                         f"My clock-out didn't save on {day}; I finished at {when}.",
                         f"Stayed late on {day} to finish the handover and left at {when}.",
                     ])
+                    language = _pick_language(langs)
+                    if language != "en":
+                        weekday = original.start.astimezone(zone).weekday()
+                        card.note = _note_in(language, "out", weekday, _localized_clock(
+                            language, original.end, zone, langs.random()))
                 else:
                     card.note = f"I think I stayed a bit late on {day}, not sure exactly when."
                 answers[f"missed_punch:missing_endpoint:{original.id}"] = {
@@ -213,6 +266,10 @@ def _build(seed):
                     card.note = f"I was out sick on {day} and couldn't come in."
                 elif story == "worked":
                     card.note = f"I worked my normal shift on {day} but my badge didn't register."
+                if story != "none":
+                    language = _pick_language(langs)
+                    if language != "en":
+                        card.note = _note_in(language, story, missing.start.astimezone(zone).weekday())
                 answers[f"missed_punch:missed_shift:{missing.id}"] = {
                     "kind": {"sick": "record_leave", "worked": "add_shift"}.get(story, "ask_employee"),
                     "time": None,
@@ -230,6 +287,7 @@ def _build(seed):
                     opening += 180
             hostile = index % 11 == 0 and mode == 1
             if hostile:
+                language = "en"
                 card.note = HOSTILE_NOTE
                 for answer in answers.values():
                     if answer.get("source") == "note":
@@ -240,5 +298,108 @@ def _build(seed):
             cards.append(card)
             labels[card.id] = expected
             truth[card.id] = {"lane": expected_lane(answers, hostile) if expected else "clear",
-                              "hostile": hostile, "items": answers}
+                              "hostile": hostile, "language": language, "items": answers}
     return cards, labels, fixes, truth
+
+
+def generate_detection_edge_cases(seed=104729):
+    """Return isolated attendance edge cases with explicit detector labels."""
+    template = generate(seed)[0][0]
+    cases = []
+
+    def make_card(name):
+        card = deepcopy(template)
+        card.id = f"eval-edge-{name}"
+        card.employee.id = card.id
+        identities = {}
+        for index, schedule in enumerate(card.schedules):
+            old_id = schedule.id
+            schedule.id = f"{card.id}-shift-{index}"
+            identities[old_id] = schedule.id
+        for shift in card.shifts:
+            shift.id = identities[shift.id]
+        return card
+
+    def add(name, card, labels):
+        cases.append((name, card, labels))
+
+    for name, endpoint in (("missing_clock_in", "start"), ("missing_clock_out", "end")):
+        card = make_card(name)
+        shift = card.shifts[0]
+        setattr(shift, endpoint, None)
+        add(name, card, {f"missed_punch:missing_endpoint:{shift.id}"})
+
+    card = make_card("missing_both_endpoints")
+    shift = card.shifts[0]
+    shift.start = shift.end = None
+    add("missing_both_endpoints", card, {f"missed_punch:missing_endpoint:{shift.id}"})
+
+    card = make_card("unrecorded_ambiguous_absence")
+    missing = card.shifts.pop(0)
+    card.note = "No punch was recorded; the employee may have been absent or forgotten to clock in."
+    add("unrecorded_ambiguous_absence", card,
+        {f"missed_punch:missed_shift:{missing.id}"})
+
+    card = make_card("confirmed_absence")
+    card.shifts.pop(0)
+    schedule = card.schedules[0]
+    schedule.absence_confirmed = True
+    add("confirmed_absence", card, {f"policy_breach:absence:{schedule.id}"})
+
+    card = make_card("duplicate_identical_punch")
+    duplicate = deepcopy(card.shifts[0])
+    card.shifts.append(duplicate)
+    add("duplicate_identical_punch", card, {
+        f"missed_punch:duplicate:{duplicate.id}",
+        f"schedule_conflict:actual_overlap:{duplicate.id}:{duplicate.id}",
+    })
+
+    card = make_card("duplicate_inconsistent_punch")
+    duplicate = deepcopy(card.shifts[0])
+    duplicate.start += timedelta(minutes=30)
+    duplicate.end += timedelta(minutes=30)
+    for break_interval in duplicate.breaks:
+        break_interval.start += timedelta(minutes=30)
+        break_interval.end += timedelta(minutes=30)
+    card.shifts.append(duplicate)
+    add("duplicate_inconsistent_punch", card, {
+        f"missed_punch:duplicate:{duplicate.id}",
+        f"schedule_conflict:actual_overlap:{duplicate.id}:{duplicate.id}",
+        f"schedule_conflict:variance:{duplicate.id}",
+    })
+
+    card = make_card("overtime_at_boundary")
+    add("overtime_at_boundary", card, set())
+
+    card = make_card("overtime_one_minute_over")
+    shift = card.shifts[0]
+    shift.end += timedelta(minutes=1)
+    add("overtime_one_minute_over", card,
+        {f"overtime_risk:forecast:{card.period_start}"})
+
+    card = make_card("schedule_at_tolerance")
+    shift = card.shifts[0]
+    shift.start += timedelta(minutes=15)
+    shift.end += timedelta(minutes=15)
+    for break_interval in shift.breaks:
+        break_interval.start += timedelta(minutes=15)
+        break_interval.end += timedelta(minutes=15)
+    add("schedule_at_tolerance", card, set())
+
+    card = make_card("schedule_over_tolerance")
+    shift = card.shifts[0]
+    shift.start += timedelta(minutes=16)
+    shift.end += timedelta(minutes=16)
+    for break_interval in shift.breaks:
+        break_interval.start += timedelta(minutes=16)
+        break_interval.end += timedelta(minutes=16)
+    add("schedule_over_tolerance", card,
+        {f"schedule_conflict:variance:{shift.id}"})
+
+    card = make_card("planned_break_mismatch")
+    schedule = card.schedules[0]
+    schedule.planned_unpaid_break_minutes += 15
+    add("planned_break_mismatch", card,
+        {f"policy_breach:planned_break:{schedule.id}"})
+
+    return cases

@@ -44,6 +44,13 @@ jobs:
           .venv/bin/python -m app.agent_eval --output artifacts/agent_scorecard.json
           echo '### Recorded real-model run' >> "$GITHUB_STEP_SUMMARY"
           python3 -c "import json;d=json.load(open('evidence/agent_scorecard.json'));print('```json');print(json.dumps(d['ai'],indent=1));print('```')" >> "$GITHUB_STEP_SUMMARY"
+      - name: Web app typecheck, unit tests and build
+        working-directory: web
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npx vitest run
+          npx vite build
       - name: Install Chromium
         working-directory: frontend
         run: npx playwright install --with-deps chromium

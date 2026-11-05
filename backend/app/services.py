@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 
+from . import notify
 from .data import generate
 from .db import Database, audit, audit_integrity, now, password_hash, uid
 from .domain import (
@@ -555,7 +556,10 @@ class Service:
                 "approval_id": approval_id, "proof_hash": proof["hash"],
                 "periods": [c.id for c in changed],
             })
-            return {"status": "committed", "approval_id": approval_id, "idempotent": False}
+            notices = notify.for_approval(cx, card, proposal_id, proof, user["id"])
+            result = {"status": "committed", "approval_id": approval_id, "idempotent": False}
+        notify.dispatch(self.db, notices)
+        return result
 
     def reject(self, proposal_id, reason, user):
         reviewer(user)

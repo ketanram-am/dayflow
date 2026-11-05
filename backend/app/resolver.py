@@ -18,7 +18,7 @@ from .agent import has_instructions
 from .domain import Correction, Employment, Model
 
 Kind = Literal["fill_punch", "remove_duplicate", "add_shift", "pay_premium",
-               "accept_as_recorded", "ask_employee", "record_leave", "needs_manager"]
+               "accept_as_recorded", "ask_employee", "record_leave", "needs_manager", "fix_schedule"]
 Lane = Literal["ready", "waiting", "judgment", "clear"]
 
 # Which resolutions are compliant for each exception code. Anything else is rejected.
@@ -33,6 +33,8 @@ ALLOWED: dict[str, set[str]] = {
     "forecast": {"accept_as_recorded"},
     "long_shift": {"accept_as_recorded"},
     "missed_shift": {"ask_employee", "add_shift", "record_leave"},
+    "schedule_overlap": {"needs_manager", "fix_schedule"},
+    "salary_roster": {"needs_manager", "fix_schedule"},
 }
 EMPLOYEE_KINDS = {"fill_punch", "add_shift", "ask_employee"}
 MANAGER_KINDS = {"needs_manager", "record_leave"}
@@ -48,6 +50,7 @@ class PlanItem(Model):
     quote: str | None = None
     reason: str
     question: str | None = None
+    detail: dict | None = None  # proof for schedule fixes: what moves, to whom, which checks passed
 
 
 def code_of(exception_id: str) -> str:
@@ -222,11 +225,44 @@ def headline(items: list[PlanItem], hostile: bool, simulation: dict | None) -> s
     return first.reason + (f" (+{extra} more)" if extra else "")
 
 
-def plan_card(svc, card, cards, policy_json, pay, ai=None) -> dict:
+def propose_schedule_fixes(svc, card, fleet, policy_json, pay, items):
+    """Replace 'needs a manager' on schedule clashes with a fix the engine has verified."""
+    from .reassign import propose
+    out, fixed = [], set()
+    for item in items:
+        found = propose(svc, card, fleet, policy_json,
+                        next(e for e in pay["exceptions"] if e["id"] == item.exception_id)
+                        ) if item.code == "schedule_overlap" else None
+        if not found:
+            out.append(item)
+            continue
+        who = found["to_employee"].split()[0]
+        if found["mode"] == "reschedule":
+            reason = (f"Two scheduled shifts overlap. The shift on {found['when']} was actually worked on "
+                      f"{found['to_when']}. Move the schedule there; the clash and the variance clear.")
+        else:
+            reason = (f"Two scheduled shifts overlap. Move {found['when']} to {found['to_employee']}, "
+                      f"who is free and stays under {found['weekly_limit_minutes'] // 60} hours "
+                      f"({found['to_week_minutes_after'] / 60:g}).")
+        del who
+        out.append(PlanItem(exception_id=item.exception_id, code=item.code, kind="fix_schedule",
+                            reason=reason, detail=found))
+        fixed.update(found.get("cleared", []))
+    # The same schedule fix can also clear a salaried-roster breach on that week.
+    return [PlanItem(exception_id=i.exception_id, code=i.code, kind="fix_schedule", detail=i.detail or {
+        "mode": "reschedule", "shift_id": i.exception_id, "to_employee_id": card.employee.id,
+        "cleared": sorted(fixed)},
+        reason="The same schedule fix restores the five-weekday roster, so this clears too.")
+        if i.code == "salary_roster" and i.exception_id in fixed else i for i in out]
+
+
+def plan_card(svc, card, cards, policy_json, pay, ai=None, fleet=None) -> dict:
     """Plan, simulate and route one card. `ai` is an optional callable returning items + trace."""
     hostile = has_instructions(card.note)
     trace = []
     items = rules_items(card, pay)
+    if not hostile:
+        items = propose_schedule_fixes(svc, card, fleet or cards, policy_json, pay, items)
     engine = "rules"
     if ai and not hostile:
         improved, ai_trace = ai(card, pay, items)

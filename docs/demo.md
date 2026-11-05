@@ -16,7 +16,7 @@ on from the Overview. The full spoken script is [narration-script.md](narration-
 | 5:15-6:30 | As e004: Questions for you → **Yes**; as Avery: **Approve** | One-tap confirmation; verified commit with the employee's answer attached. |
 | 6:30-7:00 | Needs judgment: Maya Chen (e001-2026-10-19) | Hostile note never reaches the AI. |
 | 7:00-7:45 | Overview: next-week overtime card | Swaps priced by the engine; one case honestly has no safe swap. |
-| 7:45-9:00 | Eval scorecard, Audit ledger | Note-dependent accuracy 32% → 93%; 98.7% overall; 0 invented times; chain intact. |
+| 7:45-9:00 | Eval scorecard, Audit ledger | Note-dependent accuracy 32% → 89%; 98.0% overall; 0 invented times; chain intact. |
 | 9:00-10:00 | Close | Limits: synthetic data, one small model, schedule/leave stay human. |
 
 Accounts: `avery@dayflow.demo`, `taylor@dayflow.demo`, `e004@dayflow.demo` (Alex),

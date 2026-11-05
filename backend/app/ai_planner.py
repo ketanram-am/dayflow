@@ -35,7 +35,27 @@ class NotePlan(Model):
     readings: list[NoteReading] = Field(max_length=20)
 
 
-_TIME = re.compile(r"\b(\d{1,2})[:.](\d{2})\s*([ap]\.?m\.?)?", re.I)
+# 18:15, 18.15, 18h15, 6:15 pm, "las 6:15 de la tarde", "às 18:15", "18h15 du soir".
+_PM = r"de la tarde|de la noche|da tarde|da noite|du soir|de l'après-midi"
+_AM = r"de la mañana|da manhã|du matin"
+_TIME = re.compile(
+    rf"\b(\d{{1,2}})[:.h](\d{{2}})(?!\d)\s*(?:([ap]\.?m\.?)(?![a-z])|({_PM})|({_AM}))?", re.I)
+
+_LANGUAGE_WORDS = {
+    "es": r"\b(olvid[ée]|salí|salida|enfermo|enferma|trabaj[ée]|tarjeta|miércoles|las)\b",
+    "fr": r"\b(je|j'ai|pointer|sortie|malade|travaillé|mercredi|fini)\b|j'[ae]\w*",
+    "pt": r"\b(esqueci|saí|saída|doente|trabalhei|crachá|quarta-feira|às)\b",
+}
+SICK_WORDS = (r"\b(sick|ill|unwell|fever|enferm[oa]|gripe|fiebre|malad[eo]|fièvre|doente|febre)\b")
+WORKED_WORDS = (r"\b(worked|badge|clocked|punch(ed)?|came in|trabaj[ée]|tarjeta|travaill[ée]|"
+                r"pointer|trabalhei|crach[áa])\b")
+
+
+def detect_language(note):
+    """Best-effort label (en/es/fr/pt) for the trace and the eval split. Never used to decide pay."""
+    scores = {lang: len(re.findall(pattern, note, re.I)) for lang, pattern in _LANGUAGE_WORDS.items()}
+    best = max(scores, key=scores.get)
+    return best if scores[best] else "en"
 
 
 def _norm(text):
@@ -45,8 +65,9 @@ def _norm(text):
 def times_in(quote):
     """Every clock time written in the quote as (hour, minute, meridiem or None)."""
     found = []
-    for hour, minute, meridiem in _TIME.findall(quote):
-        found.append((int(hour), int(minute), (meridiem or "").replace(".", "").lower() or None))
+    for hour, minute, meridiem, evening, morning in _TIME.findall(quote):
+        marker = (meridiem or "").replace(".", "").lower() or ("pm" if evening else "am" if morning else None)
+        found.append((int(hour), int(minute), marker))
     return found
 
 
@@ -123,8 +144,7 @@ def ground_readings(plan: NotePlan, card, pay) -> NotePlan:
             raise ProviderFailure("Worked or sick only applies to a shift with no punches")
         # The claim must be in the employee's own sentence: a sick word, or an explicit
         # statement that they worked or that the punch failed. Context alone is not enough.
-        words = r"\b(sick|ill|unwell|fever)\b" if reading.finding == "sick" else \
-            r"\b(worked|badge|clocked|punch(ed)?|came in)\b"
+        words = SICK_WORDS if reading.finding == "sick" else WORKED_WORDS
         quote = next((s for s in _sentences(card.note) if re.search(words, s, re.I)), "")
         if not quote:
             raise ProviderFailure("The note does not clearly say that; use no_info")
@@ -182,7 +202,13 @@ INSTRUCTION = (
     "worked a shift that has no punches), sick (they say they were off sick), or no_info. "
     "For anything except no_info, copy the exact words from the note into quote. For "
     "states_time also give time as 24-hour HH:MM. Use one reading per exception. Use empty "
-    "strings for fields that do not apply. Never guess a time that is not written."
+    "strings for fields that do not apply. Never guess a time that is not written. The note may "
+    "be in English, Spanish, French or Portuguese: understand it in its own language, copy the "
+    "quote in that same language word for word (never translate it), and give time as 24-hour "
+    "HH:MM (for example 'a las 6:15 de la tarde' or '18h15' means 18:15). Meaning hints: "
+    "'salí a las 18:05', 'j'ai fini à 18h15', 'saí às 18:15' state a time; 'estuve enfermo', "
+    "'j'étais malade', 'estive doente' mean sick; 'trabajé mi turno', 'j'ai travaillé', "
+    "'trabalhei meu turno' mean worked."
 )
 
 
@@ -196,6 +222,7 @@ def make_ai(provider):
             return None, trace
         zone = ZoneInfo(card.employee.timezone)
         facts = {"employee_note": card.note, "exceptions": []}
+        trace.append({"step": "note_language", "language": detect_language(card.note)})
         for e in targets:
             planned = _schedule(card, e["reference"])
             shift = _shift(card, e["reference"])

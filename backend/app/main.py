@@ -124,16 +124,22 @@ def create_app(database_path=None):
         hashed = hashlib.sha256(token.encode()).hexdigest()
         with svc.db.connect() as cx:
             row = cx.execute(
-                """SELECT u.id,u.email,u.name,u.role,u.employee_id,s.csrf,s.expires
+                """SELECT u.id,u.email,u.name,u.role,u.employee_id,s.csrf,s.expires,
+                COALESCE((SELECT is_active FROM profiles WHERE user_id=u.id),1) AS active
                 FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?""", (hashed,)
             ).fetchone()
             if not row or datetime.fromisoformat(row["expires"]) < datetime.now(timezone.utc):
                 fail("Sign in to continue", 401)
+            if not row["active"]:
+                fail("This account is not active", 403)
             if request.method not in ("GET", "HEAD", "OPTIONS") and not hmac.compare_digest(
                 request.headers.get("x-csrf-token", ""), row["csrf"]
             ):
                 fail("Invalid CSRF token", 403)
             return dict(row)
+
+    from .workforce_api import build_router
+    app.include_router(build_router(current_user, service))
 
     @app.get("/api/health")
     def health():
@@ -153,6 +159,9 @@ def create_app(database_path=None):
             if not row or not hmac.compare_digest(supplied, row["password_hash"]):
                 request.app.state.failed_logins[key] = prior + [time.monotonic()]
                 fail("Invalid email or password", 401)
+            if not cx.execute("SELECT COALESCE((SELECT is_active FROM profiles WHERE user_id=?),1)",
+                              (row["id"],)).fetchone()[0]:
+                fail("This account is not active", 403)
             token, csrf = uid("session-"), uid("csrf-")
             cx.execute("INSERT INTO sessions VALUES(?,?,?,?)", (
                 hashlib.sha256(token.encode()).hexdigest(), row["id"], csrf,

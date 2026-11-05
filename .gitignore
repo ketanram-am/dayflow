@@ -35,3 +35,9 @@ playwright-report/
 test-results/
 artifacts/
 *.tsbuildinfo
+
+# Raw upload of the original web project (merged into web/)
+Workforce-Intelligence-and-Attendance-Platform-main*
+web/.output/
+web/.wrangler/
+web/node_modules/
