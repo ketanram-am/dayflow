@@ -111,11 +111,6 @@ All data is synthetic; this is not real-world accuracy.
    employee's recorded confirmation, re-verifies the full pay period and commits it in an
    audited transaction. The agent account can author but never approve.
 
-Guardrails: strict JSON schemas with one retry that tells the model exactly what failed;
-rate-limit backoff; a per-input answer cache; a kill switch; AI off by default. Notes that
-try to give instructions skip the model entirely. With AI off, the whole product still
-works on the rules plan.
-
 ## Other features
 
 - **Overtime forecast (this week, live).** Adds the hours already punched to the shifts still scheduled,
@@ -137,7 +132,7 @@ works on the rules plan.
 
 ## Workforce modules (web interface)
 
-The Lovable-built web interface lives in [web/](web/README.md) and runs on this same
+The web interface lives in [web/](web/README.md) and runs on this same
 backend: **GeoPulse** (geofenced check-in with Inside / Outside / Uncertain), **ZenBreak** (breaks and net
 time from saved timestamps), **SyncShield** (offline queue, idempotent replay, conflict centre),
 **RotaFlow** (shifts and swaps checked against approved leave), **LeaveSync** (balances, overlap and
@@ -186,7 +181,7 @@ Verify the selected model's licence and acceptable-use terms before use.
 
 ```bash
 ollama pull qwen3:8b                        # Apache-2.0, ~5 GB; used for the demo video
-# qwen3:1.7b (~1.4 GB) also works and produced the recorded scorecard below, but reads notes less well
+# qwen3:1.7b (~1.4 GB) also works and produced the recorded scorecard above, but reads notes less well
 export DAYFLOW_LLM_MODE=ollama DAYFLOW_LLM_MODEL=qwen3:8b
 export DAYFLOW_LLM_CACHE=evidence/llm-cache.json   # reuse recorded answers; no model calls for them
 ```
@@ -226,22 +221,6 @@ FastAPI ── /api/agent/*, /api/resolutions/*, /api/planner, /api/policies/*, 
         └─ db.py           SQLite, immutable plans/answers/approvals, hash-chained audit
 ```
 
-| Location | Responsibility |
-|---|---|
-| `backend/app/engine.py` | Minute-based Decimal pay, detectors, derivation traces |
-| `backend/app/resolver.py` | Allowed resolutions per exception code, simulation, lanes |
-| `backend/app/ai_planner.py` | Note reading with grounded quotes and times |
-| `backend/app/desk.py` | Agent runs, approve / approve all, employee answers |
-| `backend/app/agent_eval.py` | Agent vs rules-only scorecard against labelled answers |
-| `backend/app/planner.py` | Next-week overtime prevention |
-| `backend/app/forecast.py` | This-week overtime forecast from real punches |
-| `backend/app/reassign.py` | Verified fixes for schedule clashes |
-| `backend/app/workforce.py` | Attendance, breaks, sync, shifts, leave and tasks (`/api/wf`) |
-| `backend/app/notify.py` | Notifications and optional email |
-| `web/` | The web app; see `web/README.md` |
-| `backend/app/data.py` | Synthetic data, detector labels and expected resolutions |
-| `frontend/` | Engine-only screens and Playwright end-to-end tests |
-
 ### Payroll decisions
 
 The fictional policy is [docs/mock-policy.md](docs/mock-policy.md): eleven clauses and 63
@@ -250,16 +229,9 @@ exempt employees: daily/weekly non-stacking overtime, double time, regular rate 
 differentials, meal premiums, leave and exempt comp-off. Unknown earnings are `null`,
 never zero. The UI only displays engine numbers.
 
-## What is and is not new
+## What is new
 
-Exception detection and approval routing already exist in workforce systems (Dayforce,
-UKG and others). Dayflow's contribution is the resolution agent with proof: reading the
-employee's own explanation into an exact, grounded correction, proving it with a
-deterministic engine before anyone sees it, routing it to the right person, and
-publishing a measured comparison against a rules-only baseline.
-
-All code here is original. No GPL/AGPL code was copied. Direct dependencies: FastAPI,
-Pydantic, HTTPX, Uvicorn, React, Vite, TypeScript, motion, Lucide.
+Exception detection and approval routing already exist in workforce systems; Dayflow's contribution is the resolution agent with proof: grounded reading of the employee's own explanation, deterministic verification before anyone sees it, and a measured comparison against a rules-only baseline. All code is original; no GPL/AGPL code was copied.
 
 ## Team
 
@@ -270,13 +242,9 @@ Pydantic, HTTPX, Uvicorn, React, Vite, TypeScript, motion, Lucide.
 | [Mohammed Raqheebuddin](https://github.com/raqheeb) | Twelve detection edge cases, aggregate metrics, provider error tests |
 | [Praveen Raj S](https://github.com/Praveenraj2206) | Approval notifications |
 
-## Deliverables
+## More documents
 
-- **Demo video (10 min):** [Google Drive](https://drive.google.com/file/d/1ZUyggTfgtVX3SJ1MmCKhniDZ1v1T3zFo/view?usp=sharing)
-- **Five-slide presentation:** [docs/Dayflow_Final_Presentation.pptx](docs/Dayflow_Final_Presentation.pptx)
-- [Demo runbook](docs/demo.md), [full feature walkthrough](docs/demo-walkthrough.md) and [narration script](docs/narration-script.md)
-- [Mock pay policy](docs/mock-policy.md) and [future improvements](docs/improvements.md)
-- [Web app notes](web/README.md)
+[Demo runbook](docs/demo.md) · [Feature walkthrough](docs/demo-walkthrough.md) · [Narration script](docs/narration-script.md) · [Mock pay policy](docs/mock-policy.md) · [Future improvements](docs/improvements.md) · [Web app notes](web/README.md)
 
 ## Limits
 
