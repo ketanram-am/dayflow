@@ -443,3 +443,14 @@ def test_provider_rejected_key_is_reported_plainly(monkeypatch):
     monkeypatch.setattr(httpx, "post", fake_post)
     with pytest.raises(ProviderFailure, match="rejected the API key"):
         Provider().extract(Out, "x", {"unique": "no-cache-hit-401"})
+
+
+def test_app_opens_as_manager_without_sign_in_only_in_demo_mode(tmp_path, monkeypatch):
+    monkeypatch.delenv("DAYFLOW_DEMO_SWITCH", raising=False)
+    with TestClient(create_app(tmp_path / "o.sqlite3")) as client:
+        assert client.post("/api/demo/start").status_code == 401
+        assert client.get("/api/me").status_code == 401
+        monkeypatch.setenv("DAYFLOW_DEMO_SWITCH", "1")
+        started = client.post("/api/demo/start").json()
+        assert started["id"] == "avery" and started["role"] == "reviewer"
+        assert client.get("/api/me").json()["id"] == "avery"

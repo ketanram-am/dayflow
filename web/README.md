@@ -12,8 +12,8 @@ cd web && npm ci && npm run dev      # open the URL Vite prints; /api is proxied
 DAYFLOW_API=http://127.0.0.1:8020 npm run dev    # point the proxy at another backend port
 ```
 
-Sign in with `avery@dayflow.demo` (administrator) or `e004@dayflow.demo` (employee); password
-`Dayflow-demo-2026!`. Set the office location once in Settings (admin) before anyone can check in.
+There is no sign-in page: start the backend with `DAYFLOW_DEMO_SWITCH=1` and the app opens as the Manager (Avery).
+The **View as** toggle switches between Manager, Approver (Taylor) and Employee (Alex Rivera). Set the office location once in Settings (admin) before anyone can check in.
 
 Screens: attendance (GeoPulse), shifts (RotaFlow), breaks (ZenBreak), sync (SyncShield), tasks, leave, people,
 reports, plus the Dayflow engine screens: resolution queue, questions for you, overtime, policy studio (with

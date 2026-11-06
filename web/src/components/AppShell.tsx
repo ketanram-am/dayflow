@@ -129,7 +129,8 @@ export function AppShell({ user, title, actions, children }: { user: User; title
     qc.clear();
     sessionStorage.removeItem("df_last_verify");
     await auth.logout();
-    navigate({ to: "/login", replace: true });
+    await auth.start();
+    navigate({ to: "/dashboard", replace: true });
   }
 
   return (
@@ -219,7 +220,7 @@ export function AppShell({ user, title, actions, children }: { user: User; title
                 <DropdownMenuItem onClick={() => navigate({ to: "/profile" })}><UserRound className="mr-2 h-4 w-4" /> Profile</DropdownMenuItem>
                 {isAdmin && <DropdownMenuItem onClick={() => navigate({ to: "/settings" })}><Settings className="mr-2 h-4 w-4" /> Settings</DropdownMenuItem>}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={signOut}><LogOut className="mr-2 h-4 w-4" /> Sign out</DropdownMenuItem>
+                <DropdownMenuItem onClick={signOut}><LogOut className="mr-2 h-4 w-4" /> Back to Manager</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
