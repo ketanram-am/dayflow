@@ -213,6 +213,25 @@ def create_app(database_path=None):
             audit(cx, user["id"], "demo_day_reset", user["id"], {"date": today, "records": len(ids)})
         return {"status": "reset", "records": len(ids)}
 
+    @app.post("/api/demo/start")
+    def demo_start(response: Response, svc=Depends(service)):
+        """Open straight into the manager account: the app has no sign-in page (needs DAYFLOW_DEMO_SWITCH=1)."""
+        if not demo_enabled():
+            fail("Start the backend with DAYFLOW_DEMO_SWITCH=1 to open the app", 401)
+        with svc.db.transaction() as cx:
+            row = cx.execute("SELECT * FROM users WHERE id=?", (DEMO_ACCOUNTS[0],)).fetchone()
+            if not row:
+                fail("Demo manager account not found", 404)
+            token, csrf = uid("session-"), uid("csrf-")
+            cx.execute("INSERT INTO sessions VALUES(?,?,?,?)", (
+                hashlib.sha256(token.encode()).hexdigest(), row["id"], csrf,
+                (datetime.now(timezone.utc) + timedelta(hours=8)).isoformat()))
+            audit(cx, row["id"], "demo_session_started", row["id"], {})
+            response.set_cookie("dayflow_session", token, httponly=True, samesite="strict",
+                                secure=os.environ.get("DAYFLOW_SECURE_COOKIES") == "1",
+                                max_age=28800, path="/")
+            return {k: row[k] for k in ("id", "email", "name", "role", "employee_id")} | {"csrf": csrf}
+
     @app.post("/api/demo/switch")
     def demo_switch(payload: DemoSwitch, request: Request, response: Response, user=Depends(current_user),
                     svc=Depends(service)):

@@ -160,20 +160,15 @@ cd web && npm ci && npm run dev      # open the URL Vite prints; /api is proxied
 
 The first start creates a SQLite database with 30 employees, two pay periods, 60 timecards
 and 155 labelled exceptions, plus a believable "today" (check-ins, breaks, leave, two pending shift swaps).
-Then: **Policy Studio** → sign the ruleset → **Resolution Queue** → **Run agent**. With
-`DAYFLOW_DEMO_SWITCH=1` a **View as** toggle (Manager / Approver / Employee) in the top bar lets one person
-play all three roles; leave it off for normal use. Another backend port: `DAYFLOW_API=http://127.0.0.1:8001 npm run dev`.
+Then: **Policy Studio** → sign the ruleset → **Resolution Queue** → **Run agent**. The
+`DAYFLOW_DEMO_SWITCH=1` setting is required: it removes the sign-in page and adds the **View as** toggle. Another backend port: `DAYFLOW_API=http://127.0.0.1:8001 npm run dev`.
 
 The engine-only screens in `frontend/` (served by the backend at `/` after `npm ci && npm run build --prefix frontend`)
 are kept for the browser end-to-end tests in CI.
 
-| Account | Role |
-|---|---|
-| `avery@dayflow.demo` | Reviewer |
-| `taylor@dayflow.demo` | Second reviewer |
-| `e001@dayflow.demo` … `e030@dayflow.demo` | Employees (e004 Alex Rivera is a good demo) |
-
-Local demo password: `Dayflow-demo-2026!`. Do not expose demo accounts publicly.
+There is no sign-in page: the app opens straight in as the **Manager** (Avery Quinn). With `DAYFLOW_DEMO_SWITCH=1`
+the **View as** toggle in the top bar switches between the three roles: **Manager** (Avery), **Approver**
+(Taylor, the second approver) and **Employee** (Alex Rivera). Without that variable the app does not open.
 
 ### Turning on the AI (open-weight models)
 
@@ -241,6 +236,7 @@ Exception detection and approval routing already exist in workforce systems; Day
 | [Harshitha S](https://github.com/harshitha792) | Web app design and front end: all screens, including the resolution queue, overtime, policy, pay, audit and scorecard |
 | [Mohammed Raqheebuddin](https://github.com/raqheeb) | Twelve detection edge cases, aggregate metrics, provider error tests |
 | [Praveen Raj S](https://github.com/Praveenraj2206) | Approval notifications |
+| Reddymasi Manasa | Team member: testing, review and demo preparation |
 
 ## More documents
 

@@ -63,7 +63,7 @@ export const get = <R,>(path: string, params?: Record<string, string | number | 
   return request<R>("GET", path + (s ? `?${s}` : ""));
 };
 
-/** Auth: cookie session issued by /api/login. */
+/** Auth: cookie session opened by /api/demo/start. */
 export const auth = {
   /** The signed-in user if the session has already been loaded (no network). */
   current: (): T.SessionUser | null => session ?? null,
@@ -77,8 +77,9 @@ export const auth = {
     }
     return session ?? null;
   },
-  async login(email: string, password: string) {
-    const user = await request<T.SessionUser>("POST", "/login", { email: email.trim(), password });
+  /** Opens as the manager; there is no sign-in page. Needs the backend to run with DAYFLOW_DEMO_SWITCH=1. */
+  async start() {
+    const user = await request<T.SessionUser>("POST", "/demo/start", {});
     emit(user);
     return user;
   },
