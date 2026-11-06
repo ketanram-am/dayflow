@@ -4,6 +4,20 @@
 
 **simplified mock policy, not legal advice**
 
+> **AI Innovation Challenge entry, use case 5: Time & Attendance.** A timecard exception resolution agent
+> that detects missed punches, overtime risks, schedule conflicts and policy breaches, then proposes
+> compliant corrections.
+
+| Deliverable | Where |
+|---|---|
+| **Demo video (10 min)** | [Watch on Google Drive](https://drive.google.com/file/d/1ZUyggTfgtVX3SJ1MmCKhniDZ1v1T3zFo/view?usp=sharing) |
+| **Five-slide final presentation** | [docs/Dayflow_Final_Presentation.pptx](docs/Dayflow_Final_Presentation.pptx) |
+| Source, setup and run instructions | This README ([Run it](#run-it)) |
+| Safety, testing and evaluation evidence | [Results](#results-on-the-labelled-data), [Reproduce the evidence](#reproduce-the-evidence), [CI](.github/workflows/quality.yml) |
+| API contract (OpenAPI) | Run the backend, then open `/docs` (and `/openapi.json`) |
+
+## The problem and the user
+
 Every pay period, timecards arrive with missed punches, duplicate punches, missed meal
 breaks, schedule clashes and overtime. Employees usually explain the problem in their own
 words ("Forgot to clock out, left at 6:15 after closing"), and a manager reads every note
@@ -25,6 +39,32 @@ computes pay, never writes records and never approves anything.
 This is a local-first challenge demonstrator on synthetic data, not a payroll service,
 legal compliance product or production identity system. No surveillance data
 (screenshots, location, biometrics, keystrokes) is collected.
+
+## User journey (what the demo video shows)
+
+1. **Reviewer (manager)** signs the pay ruleset in Policy Studio, then opens **Resolution Queue** and clicks **Run agent**.
+   Every exception on 60 timecards gets a compliant, engine-verified plan in one of three lanes.
+2. **Employee (Alex Rivera)** sees "Questions for You": the agent read "I finished at 17:50" in Alex's own note and
+   asks one tap, **Yes, that's right**.
+3. **Approver (a different person)** approves the verified fix; the commit, the employee's answer and the agent's proof
+   land in the hash-chained **Audit Ledger**. The agent can author but never approve.
+4. **Also shown:** this-week **Overtime** forecast with priced "finish early" / "hand over" options, **Pay Explorer**
+   (explain my paycheck), **What-if** on a rule, and the workforce modules below (geofenced check-in, offline sync,
+   rota swaps, leave, tasks) running on the same backend and audit chain.
+
+## Harness engineering (how the AI is governed)
+
+| Judging area | What Dayflow does | Where |
+|---|---|---|
+| Structured contracts | Strict JSON schemas (Pydantic) for every model call; typed API; OpenAPI at `/docs` | `backend/app/ai_planner.py`, `backend/app/agent.py` |
+| Validation and guardrails | One retry that names what failed; answer must quote a sentence of the note that states the time; the pay engine re-computes the fix and rejects any that leaves or creates a problem | `ai_planner.py`, `resolver.py`, `engine.py` |
+| Prompt-injection defence | Notes that try to give orders skip the model entirely and go to a manager | `agent.py` (`has_instructions`) |
+| Fallback design | Provider down, rate limited, key rejected or bad output: the card falls back to the rules plan; AI is off by default; runtime kill switch | `agent.py`, `/api/llm` |
+| Human oversight | Maker-checker: the agent account cannot approve; the employee confirms any change to worked time; a different human approves | `desk.py`, `services.py` |
+| Traceability | Every plan, answer and approval is immutable and hash-chained; each plan shows the model attempts and engine checks | `db.py`, Audit Ledger |
+| Grounding | Pay figures come only from the deterministic engine; the model reads free text and never computes money | `engine.py` |
+| Open-weight model | `qwen3` (Apache-2.0) through Ollama, local-first; any OpenAI-compatible endpoint also works. Verify the licence of any model you swap in | `agent.py` (`LICENCES`) |
+| Testing | Backend unit, golden, integration and API tests; labelled agent evaluation; web type-check, unit tests and build; browser end-to-end tests; all in CI | `backend/tests`, `web`, `frontend/tests` |
 
 ## Results on the labelled data
 
@@ -114,14 +154,23 @@ cd dayflow
 python3 -m venv .venv
 .venv/bin/python -m pip install -r backend/requirements.lock
 .venv/bin/python -m pip install --no-deps -e './backend[dev]'
-npm ci --prefix frontend
-npm run build --prefix frontend
-.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+# terminal 1: backend (a new DAYFLOW_DB path gives a clean demo database)
+DAYFLOW_DB=/tmp/dayflow.sqlite3 DAYFLOW_DEMO_SWITCH=1 \
+  .venv/bin/python -m uvicorn app.main:app --app-dir backend --port 8000
+
+# terminal 2: web app
+cd web && npm ci && npm run dev      # open the URL Vite prints; /api is proxied to :8000
 ```
 
-Open **http://127.0.0.1:8000**. The first start creates a SQLite database with 30
-employees, two pay periods, 60 timecards and 155 labelled exceptions. Sign the ruleset in
-Policy studio, then open **Resolution queue** and click **Run agent**.
+The first start creates a SQLite database with 30 employees, two pay periods, 60 timecards
+and 155 labelled exceptions, plus a believable "today" (check-ins, breaks, leave, two pending shift swaps).
+Then: **Policy Studio** → sign the ruleset → **Resolution Queue** → **Run agent**. With
+`DAYFLOW_DEMO_SWITCH=1` a **View as** toggle (Manager / Approver / Employee) in the top bar lets one person
+play all three roles; leave it off for normal use. Another backend port: `DAYFLOW_API=http://127.0.0.1:8001 npm run dev`.
+
+The engine-only screens in `frontend/` (served by the backend at `/` after `npm ci && npm run build --prefix frontend`)
+are kept for the browser end-to-end tests in CI.
 
 | Account | Role |
 |---|---|
@@ -136,12 +185,13 @@ Local demo password: `Dayflow-demo-2026!`. Do not expose demo accounts publicly.
 Verify the selected model's licence and acceptable-use terms before use.
 
 ```bash
-ollama pull qwen3:1.7b                      # Apache-2.0, ~1.4 GB, light on a laptop
-export DAYFLOW_LLM_MODE=ollama DAYFLOW_LLM_MODEL=qwen3:1.7b
+ollama pull qwen3:8b                        # Apache-2.0, ~5 GB; used for the demo video
+# qwen3:1.7b (~1.4 GB) also works and produced the recorded scorecard below, but reads notes less well
+export DAYFLOW_LLM_MODE=ollama DAYFLOW_LLM_MODEL=qwen3:8b
 export DAYFLOW_LLM_CACHE=evidence/llm-cache.json   # reuse recorded answers; no model calls for them
 ```
 
-Then sign in as a reviewer and press **Turn AI on** on the Overview. Any OpenAI-compatible
+Then sign in as a reviewer and switch on **Use AI to read employee notes** in the Resolution Queue before **Run agent**. Any OpenAI-compatible
 endpoint also works (`DAYFLOW_LLM_MODE=openai`, `DAYFLOW_LLM_BASE_URL`,
 `DAYFLOW_LLM_API_KEY`). Only send synthetic data to a provider you trust.
 
@@ -152,14 +202,15 @@ endpoint also works (`DAYFLOW_LLM_MODE=openai`, `DAYFLOW_LLM_BASE_URL`,
 .venv/bin/pytest backend/tests -q
 cd backend && ../.venv/bin/python -m app.evals && ../.venv/bin/python -m app.agent_eval
 # with a model configured:  ../.venv/bin/python -m app.agent_eval --ai
+cd ../web && npx tsc --noEmit && npx vitest run && npx vite build
 cd ../frontend && npx playwright install chromium && npm run test:e2e
 ```
 
 ## Architecture
 
 ```text
-web/        Dayflow web app (React + TanStack): attendance, shifts, leave, tasks, and the screens to come
-frontend/   Dayflow engine screens (queue, lanes, drawer, derivations) used for the demo and end-to-end tests
+web/        Dayflow web app (React + TanStack): attendance, shifts, leave, tasks, queue, policy, pay, audit
+frontend/   Engine-only screens kept for the browser end-to-end tests in CI
         | cookie session + CSRF
 FastAPI ── /api/agent/*, /api/resolutions/*, /api/planner, /api/policies/*, /api/wf/*
         |
@@ -187,9 +238,9 @@ FastAPI ── /api/agent/*, /api/resolutions/*, /api/planner, /api/policies/*, 
 | `backend/app/reassign.py` | Verified fixes for schedule clashes |
 | `backend/app/workforce.py` | Attendance, breaks, sync, shifts, leave and tasks (`/api/wf`) |
 | `backend/app/notify.py` | Notifications and optional email |
-| `web/` | The web app; start with `docs/frontend-handoff.md` |
+| `web/` | The web app; see `web/README.md` |
 | `backend/app/data.py` | Synthetic data, detector labels and expected resolutions |
-| `frontend/src/Queue.tsx` | Resolution queue, plan drawer, employee questions |
+| `frontend/` | Engine-only screens and Playwright end-to-end tests |
 
 ### Payroll decisions
 
@@ -221,10 +272,11 @@ Pydantic, HTTPX, Uvicorn, React, Vite, TypeScript, motion, Lucide.
 
 ## Deliverables
 
-- [Five-slide presentation](docs/deck.html)
-- [Demo runbook](docs/demo.md) and [word-for-word narration](docs/narration-script.md)
-- [Frontend notes](docs/frontend-handoff.md) and [improvement list](docs/improvements.md)
-- **Demo video: pending recording.** Add the URL here before submission.
+- **Demo video (10 min):** [Google Drive](https://drive.google.com/file/d/1ZUyggTfgtVX3SJ1MmCKhniDZ1v1T3zFo/view?usp=sharing)
+- **Five-slide presentation:** [docs/Dayflow_Final_Presentation.pptx](docs/Dayflow_Final_Presentation.pptx)
+- [Demo runbook](docs/demo.md), [full feature walkthrough](docs/demo-walkthrough.md) and [narration script](docs/narration-script.md)
+- [Mock pay policy](docs/mock-policy.md) and [future improvements](docs/improvements.md)
+- [Web app notes](web/README.md)
 
 ## Limits
 
